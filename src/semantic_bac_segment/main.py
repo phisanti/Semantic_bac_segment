@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 from semantic_bac_segment.train import UNetTrainer
-from semantic_bac_segment.models.pytorch_basemodel import UNet as UNet
+# from semantic_bac_segment.models.pytorch_basemodel import UNet as UNet
 from semantic_bac_segment.models.pytorch_altmodel import UNET as UNet2
 from semantic_bac_segment.loss_functions import DiceLoss, WeightedBinaryCrossEntropy
 from semantic_bac_segment.data_loader import collate_fn

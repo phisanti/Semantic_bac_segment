@@ -11,6 +11,7 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.tensorboard import SummaryWriter
 from semantic_bac_segment.loss_functions import DiceLoss, WeightedBinaryCrossEntropy
 from semantic_bac_segment.data_loader import BacSegmentDataset, collate_fn
+from semantic_bac_segment.utils import empty_gpu_cache
 
 class UNetTrainer:
     def __init__(self, train_dir, test_dir, models_dir, input_size, precision):
@@ -51,9 +52,9 @@ class UNetTrainer:
     def read_data(self, batch_size, subsetting, filter_threshold, collate_fn):
         
         # Define dirs
-        self.train_img_dir=os.path.join(self.train_dir, 'source/')
+        self.train_img_dir=os.path.join(self.train_dir, 'source_norm/')
         self.train_mask_dir=os.path.join(self.train_dir, 'mask/')
-        self.test_img_dir=os.path.join(self.test_dir, 'source/')
+        self.test_img_dir=os.path.join(self.test_dir, 'source_norm/')
         self.test_mask_dir=os.path.join(self.test_dir, 'mask/')
 
         # Read data
@@ -71,8 +72,8 @@ class UNetTrainer:
                                              subsetting=0, 
                                              precision=self.precision)
 
-        self.data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-        self.validation_loader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=collate_fn)
+        self.data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, pin_memory=True)
+        self.validation_loader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=collate_fn, pin_memory=True)
         
         self.validation_size=len(self.data_loader)
         self.training_size=len(self.validation_loader)
@@ -113,12 +114,15 @@ class UNetTrainer:
 
             scheduler.step()
             self.model.eval()
+            del images, masks
+            empty_gpu_cache(self.device)
 
             with torch.no_grad():
                 n=random.randint(0, self.validation_size)
                 index=0
                 val_loss = 0.0
                 inference_times=np.zeros(self.validation_size)
+
                 for val_images, val_masks in self.validation_loader:
                     inference_tic = time.time()
 
@@ -140,9 +144,14 @@ class UNetTrainer:
                         writer.add_images('predictions', output_imgs, epoch)
 
                     if verbose:
-                        print(f"Inference time: {inference_tac-inference_tic:.1f} seconds")
+                        print(f"Inference time: {inference_tac-inference_tic:.2f} seconds")
                     inference_times[index]=inference_tac-inference_tic
                     index += 1
+
+                    del val_images, val_masks, output_imgs
+                    empty_gpu_cache(self.device)
+
+
                 if val_loss < best_loss:
                     best_loss = val_loss
                     torch.save(self.model.state_dict(), os.path.join(self.models_dir, f'{model_name}_best_model.pth'))
@@ -156,7 +165,7 @@ class UNetTrainer:
             writer.add_scalar('Inference Time', np.mean(inference_times), epoch)
 
             if verbose:
-                print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}')
+                print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}')
                 print(f'Training epoch time: {epoch_tac-epoch_tic} seconds')
 
         torch.save(self.model.state_dict(), os.path.join(self.models_dir, f'{model_name}_last_model.pth'))

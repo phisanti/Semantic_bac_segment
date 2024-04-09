@@ -1,7 +1,7 @@
 import numpy as np
 import itertools
 import yaml
-
+import torch
 
 def read_cofig(yaml_file):
     with open(yaml_file, 'r') as file:
@@ -202,3 +202,10 @@ def add_padding(img, pad_size, mode='symmetric'):
     """
     padded_img = np.pad(img, pad_size, mode=mode)
     return padded_img
+
+def empty_gpu_cache(device):
+    # Clear the GPU cache
+    if device.type == 'cuda':
+        torch.cuda.empty_cache()
+    elif device.type == 'mps':
+        torch.mps.empty_cache()
