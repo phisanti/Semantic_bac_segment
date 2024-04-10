@@ -1,7 +1,8 @@
 from pathlib import Path
 import sys
-from itertools import product
 import numpy as np
+import cv2
+from itertools import product
 from typing import Tuple, List
 from skimage.util import view_as_windows
 
@@ -101,3 +102,29 @@ class ImageAdapter:
                      mode='symmetric')
 
         return img
+    
+    def clear_background(self, sigma_r=25, method='divide', convert_32=True):
+        
+        # Input checks
+        img = self.img.copy()
+
+        if img.ndim != 2:
+            raise ValueError("Input image must be 2D")
+        if convert_32:
+            img = img.astype(np.float32)
+        def round_to_odd(number):
+            return int(number) if number % 2 == 1 else int(number) + 1
+        
+        # Gaussian blur
+        sigma_r=round_to_odd(sigma_r)
+        gaussian_blur = cv2.GaussianBlur(img, (sigma_r, sigma_r), 0)
+
+        # Background remove
+        if method == 'subtract':
+            background_removed = cv2.subtract(img, gaussian_blur)
+        elif method == 'divide':
+            background_removed = cv2.divide(img, gaussian_blur)
+        else:
+            raise ValueError("Invalid method. Choose either 'subtract' or 'divide'")
+        
+        self.img = background_removed
