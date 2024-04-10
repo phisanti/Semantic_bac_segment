@@ -209,3 +209,17 @@ def empty_gpu_cache(device):
         torch.cuda.empty_cache()
     elif device.type == 'mps':
         torch.mps.empty_cache()
+
+def get_device():
+    """
+    Detects the available GPU device.
+
+    Returns:
+        torch.device: The device to be used for inference.
+    """
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        return torch.device("mps")
+    else:
+        return torch.device("cpu")
