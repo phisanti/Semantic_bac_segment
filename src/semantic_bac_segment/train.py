@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.tensorboard import SummaryWriter
 from semantic_bac_segment.loss_functions import DiceLoss, WeightedBinaryCrossEntropy
 from semantic_bac_segment.data_loader import BacSegmentDataset, collate_fn
-from semantic_bac_segment.utils import empty_gpu_cache
+from semantic_bac_segment.utils import empty_gpu_cache, get_device
 
 class UNetTrainer:
     def __init__(self, train_dir, test_dir, models_dir, input_size, precision):
@@ -21,15 +21,7 @@ class UNetTrainer:
         self.input_size = input_size
         self.precision = precision
         self.previous_weights = None
-
-        if torch.backends.mps.is_available():
-            device = torch.device("mps")  
-        elif torch.cuda.is_available():
-            device = torch.device("cuda") 
-        else:
-            device = torch.device("cpu")  
-
-        self.device = device
+        self.device = get_device()
 
 
     def add_model(self, nn_model, pooling_steps=4, previous_weights=None):
@@ -49,7 +41,7 @@ class UNetTrainer:
         self.model=model
 
 
-    def read_data(self, batch_size, subsetting, filter_threshold, collate_fn):
+    def read_data(self, batch_size, num_workers, subsetting, filter_threshold, collate_fn):
         
         # Define dirs
         self.train_img_dir=os.path.join(self.train_dir, 'source_norm/')
@@ -71,7 +63,7 @@ class UNetTrainer:
                                              patch_size=self.input_size, 
                                              subsetting=0, 
                                              precision=self.precision)
-
+        num_workers=num_workers
         self.data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, pin_memory=True)
         self.validation_loader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=collate_fn, pin_memory=True)
         
