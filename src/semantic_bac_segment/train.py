@@ -64,11 +64,12 @@ class UNetTrainer:
                                              subsetting=0, 
                                              precision=self.precision)
         num_workers=num_workers
+        self.batch_size=batch_size
         self.data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, pin_memory=True)
-        self.validation_loader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=collate_fn, pin_memory=True)
+        self.validation_loader = DataLoader(val_dataset, batch_size=1, collate_fn=collate_fn, pin_memory=True)
         
-        self.validation_size=len(self.data_loader)
-        self.training_size=len(self.validation_loader)
+        self.training_size=len(self.data_loader)
+        self.validation_size=len(self.validation_loader)
 
     def train(self, num_epochs=5, model_name="", verbose=True, learning_rate=0.001, gamma=0.1, step_size=1, criterion=DiceLoss()):
 
