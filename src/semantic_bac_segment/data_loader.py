@@ -117,10 +117,16 @@ def collate_fn(batch):
     # Stack the images and masks along a new dimension
     images = torch.stack(images, dim=0)
     masks = torch.stack(masks, dim=0)
-    
-    # Reshape the images and masks to combine crops with the batch size
+
+    # Get the number of crops and the batch size
     num_crops = images.shape[1]
-    images = images.view(-1, 1, images.shape[-2], images.shape[-1])
-    masks = masks.view(-1, 1, masks.shape[-2], masks.shape[-1])
+    batch_size = images.shape[0]
     
+    # Calculate total number of samples
+    total_samples = num_crops * batch_size
+    
+    # Reshape the images and masks to combine crops with the total number of samples
+    images = images.view(total_samples, 1, images.shape[-2], images.shape[-1])
+    masks = masks.view(total_samples, 1, masks.shape[-2], masks.shape[-1])
+
     return images, masks
