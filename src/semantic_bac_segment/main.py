@@ -4,10 +4,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from semantic_bac_segment.train import UNetTrainer
 # from semantic_bac_segment.models.pytorch_basemodel import UNet as UNet
 from semantic_bac_segment.models.pytorch_altmodel import UNET as UNet2
+from monai.networks.nets import unet
 from semantic_bac_segment.loss_functions import DiceLoss, WeightedBinaryCrossEntropy
 from semantic_bac_segment.data_loader import collate_fn
 from semantic_bac_segment.utils import read_cofig
-
+#from monai.losses import DiceLoss
 
 
 if __name__ == '__main__':
@@ -24,5 +25,5 @@ if __name__ == '__main__':
 
     # Train the model
     #criterion=DiceLoss(is_sigmoid=False)
-    criterion=WeightedBinaryCrossEntropy(is_sigmoid=False)
+    criterion=WeightedBinaryCrossEntropy(is_sigmoid=True)
     trainer.train(**train_settings['optimizer_params'], criterion=criterion)
