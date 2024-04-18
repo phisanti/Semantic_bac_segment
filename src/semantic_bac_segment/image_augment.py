@@ -5,6 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from typing import Tuple
 import numpy as np
 import random
+import cv2
 from scipy.ndimage import map_coordinates, gaussian_filter
 from semantic_bac_segment.utils import get_bit_depth
 
@@ -148,11 +149,17 @@ class ImageAugmenter:
 
         return img, mask
     
+
     def no_transformation(self, 
                           img: np.ndarray, 
                           mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         return img, mask
 
+
+    def edges(self, img, mask, min_n=100, max_n=200):
+        edges = cv2.Canny(cv2.convertScaleAbs(mask), min_n, max_n)
+
+        return img, edges
 
 
 def clip_image(img: np.ndarray) -> np.ndarray:
