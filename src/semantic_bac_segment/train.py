@@ -10,13 +10,12 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.tensorboard import SummaryWriter
 from semantic_bac_segment.loss_functions import DiceLoss, WeightedBinaryCrossEntropy
-from semantic_bac_segment.data_loader import BacSegmentDataset, collate_fn
+from semantic_bac_segment.data_loader import BacSegmentDataset, collate_fn, TrainSplit
 from semantic_bac_segment.utils import empty_gpu_cache, get_device
 
 class UNetTrainer:
-    def __init__(self, train_dir, test_dir, models_dir, input_size, precision):
+    def __init__(self, train_dir, models_dir, input_size, precision):
         self.train_dir = train_dir
-        self.test_dir = test_dir
         self.models_dir = models_dir
         self.input_size = input_size
         self.precision = precision
@@ -30,35 +29,26 @@ class UNetTrainer:
         if previous_weights:
             model.load_weights(previous_weights)
         
-        if self.precision == 'half':
-            model = model.to(self.device).half()
-        else:
-            model = model.to(self.device).float()
-
-
+        model = model.to(self.device)
         torch.compile(model)
         
         self.model=model
 
 
-    def read_data(self, batch_size, num_workers, subsetting, filter_threshold, collate_fn):
+    def read_data(self, batch_size, num_workers, subsetting, filter_threshold, val_ratio, collate_fn):
         
-        # Define dirs
-        self.train_img_dir=os.path.join(self.train_dir, 'source_norm/')
-        self.train_mask_dir=os.path.join(self.train_dir, 'mask/')
-        self.test_img_dir=os.path.join(self.test_dir, 'source_norm/')
-        self.test_mask_dir=os.path.join(self.test_dir, 'mask/')
-
+        splitter=TrainSplit(os.path.join(self.train_dir, 'source_norm/'), 
+                   os.path.join(self.train_dir, 'mask_cleaned/'), val_ratio=val_ratio)
+        splitter.get_samplepairs()
+        train_pairs, val_pairs=splitter.split_samples()
         # Read data
-        dataset = BacSegmentDataset(self.train_img_dir, 
-                                         self.train_mask_dir, 
+        dataset = BacSegmentDataset(train_pairs, 
                                          mode='train', 
                                          patch_size=self.input_size, 
                                          subsetting=subsetting, 
                                          filter_threshold=filter_threshold, 
                                          precision=self.precision)
-        val_dataset = BacSegmentDataset(self.test_img_dir, 
-                                             self.test_mask_dir, 
+        val_dataset = BacSegmentDataset(val_pairs, 
                                              mode='validation', 
                                              patch_size=self.input_size, 
                                              subsetting=0, 
@@ -89,14 +79,11 @@ class UNetTrainer:
             self.model.train()
             train_loss=0.0
             for images, masks in self.data_loader:
-                
-                if self.precision == 'half':
-                    images = images.to(device).half()
-                    masks = masks.to(device).half()
-                else:
-                    images = images.to(device)
-                    masks = masks.to(device)
+                                
+                images = images.to(device)
+                masks = masks.to(device)
 
+                assert images.dtype == masks.dtype
                 outputs = self.model(images)
                 
                 loss = criterion(outputs, masks)
@@ -117,17 +104,16 @@ class UNetTrainer:
                 inference_times=np.zeros(self.validation_size)
 
                 for val_images, val_masks in self.validation_loader:
+                    
                     inference_tic = time.time()
+                    val_images = val_images.to(device)
+                    val_masks = val_masks.to(device)
+                    
+                    assert val_masks.dtype == val_images.dtype
 
-                    if self.precision == 'half':
-                        val_images = val_images.to(device).half()
-                        val_masks = val_masks.to(device).half()
-                    else:
-                        val_images = val_images.to(device)
-                        val_masks = val_masks.to(device)
                     output_imgs = self.model(val_images)
+                    
                     inference_tac = time.time()
-
                     val_loss += criterion(output_imgs, val_masks)
 
                     if index == n:
