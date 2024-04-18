@@ -2,10 +2,9 @@
 
 # Directory paths
 trainer_params:
-  train_dir: './data/train/'    # Location images and masks for training. Two subdirectories are expected: 'source' and 'mask'
-  test_dir: './data/test/'      # Location images and masks for training. Two subdirectories are expected: 'source' and 'mask'
+  train_dir: './data/'    # Location images and masks for training. Two subdirectories are expected: 'source' and 'mask'
   models_dir: './data/models/state_weights/'   # Location to save the trained models
-  input_size: 1200              # Size of the input images (increase due to stiching time)
+  input_size: 256               # Size of the input images (increase due to stiching time)
   precision: 'float'            # Precision of the model (float or half)
 
 # Training parameters
@@ -15,16 +14,17 @@ model_params:
 
 # Data import parameters
 data_params:
-  batch_size: 4                 # Batch size for training
+  batch_size: 1                 # Batch size for training
   num_workers: 2                # Number of workers for the DataLoader class (load images in parallel), currently not working
-  subsetting: 25                # Percentage of the training data to use or number of images to subset
+  subsetting: 5                 # Percentage of the training data to use or number of images to subset
   filter_threshold: 0.25        # Threshold to filter out images with low mask coverage
+  val_ratio: .33                # Validation ratio (percentage of data to use for validation)
 
 # Optimizer parameters (common names, so no explanation needed)
 optimizer_params:
-  num_epochs: 20
-  model_name: 'unet_model_test_3'
+  num_epochs: 21
+  model_name: 'unet_model_test_4'
   verbose: true
   learning_rate: 0.003
   gamma: 0.1
-  step_size: 25
+  step_size: 7
