@@ -83,11 +83,11 @@ class UNetTrainer:
                 images = images.to(device)
                 masks = masks.to(device)
 
-                assert images.dtype == masks.dtype
                 outputs = self.model(images)
                 
                 loss = criterion(outputs, masks)
-                train_loss += loss.item()
+                loss_cpu = loss.to('cpu')
+                train_loss += loss_cpu.item()
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -109,7 +109,6 @@ class UNetTrainer:
                     val_images = val_images.to(device)
                     val_masks = val_masks.to(device)
                     
-                    assert val_masks.dtype == val_images.dtype
 
                     output_imgs = self.model(val_images)
                     
