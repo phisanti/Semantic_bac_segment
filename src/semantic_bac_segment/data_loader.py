@@ -13,12 +13,55 @@ import torch
 from torch.utils.data.dataset import Dataset
 import os
 import tifffile
+import random
 
+import os
+import numpy as np
+import glob
+class TrainSplit:
+    def __init__(self, image_path, mask_path, val_ratio=0.1):
+        self.image_path = image_path
+        self.mask_path = mask_path
+        self.val_ratio = val_ratio
+        
+    def get_samplepairs(self):
+        assert os.path.exists(self.image_path), "Image directory does not exist"
+        assert os.path.exists(self.mask_path), "Mask directory does not exist"
+
+        image_files = sorted(glob.glob(os.path.join(self.image_path, '*')))
+        mask_files = sorted(glob.glob(os.path.join(self.mask_path, '*')))
+
+        assert len(image_files) == len(mask_files), "Number of images and masks do not match"
+        self.image_mask_pairs = list(zip(image_files, mask_files))
+
+        return self.image_mask_pairs
+
+    def split_samples(self, verbose=True):
+        train_dicts, valid_dicts = self.image_mask_pairs, []
+        if self.val_ratio > 0:
+
+            # Obtain & shuffle data indices
+            num_data_dicts = len(self.image_mask_pairs)
+            indices = np.arange(num_data_dicts)
+            np.random.shuffle(indices)
+
+            # Divide train/valid indices by the proportion
+            valid_size = int(num_data_dicts * self.val_ratio)
+            train_indices = indices[valid_size:]
+            valid_indices = indices[:valid_size]
+
+            # Assign data dicts by split indices
+            train_dicts = [self.image_mask_pairs[idx] for idx in train_indices]
+            valid_dicts = [self.image_mask_pairs[idx] for idx in valid_indices]
+            
+            if verbose:
+                print(f"\n(DataLoaded) Training data size: {len(train_dicts)}, Validation data size: {len(valid_dicts)}\n")
+
+        return train_dicts, valid_dicts
 
 class BacSegmentDataset(Dataset):
     def __init__(self, 
-                 image_path, 
-                 mask_path, 
+                 image_pairs, 
                  in_channels=1, 
                  out_channels=1, 
                  mode='train', 
@@ -27,16 +70,8 @@ class BacSegmentDataset(Dataset):
                  subsetting=0, 
                  filter_threshold=None,
                  precision='half'):
-        
-        assert os.path.exists(image_path), "Image directory does not exist"
-        assert os.path.exists(mask_path), "Mask directory does not exist"
-
-        self.image_files = sorted(glob.glob(os.path.join(image_path, '*')))
-        self.mask_files = sorted(glob.glob(os.path.join(mask_path, '*')))
-
-        assert len(self.image_files) == len(self.mask_files), "Number of images and masks do not match"
-        
-        
+                
+        self.image_pairs=image_pairs
         self.patch_size = patch_size
         self.in_channels = in_channels
         self.out_channels= out_channels 
@@ -48,13 +83,14 @@ class BacSegmentDataset(Dataset):
         if isinstance(subsetting, int):
             self.subsetting = subsetting
         elif isinstance(subsetting, float) and 0 < subsetting < 1:
-            self.subsetting = int(len(self.image_files) * subsetting)
+            self.subsetting = int(len(self.image_pairs) * subsetting)
         else:
             raise ValueError("Invalid value for subsetting. It should be an integer or a fraction between 0 and 1.")
 
     def __getitem__(self, index):
-        img = tifffile.imread(self.image_files[index])
-        mask = tifffile.imread(self.mask_files[index])
+        img_path, mask_path = self.image_pairs[index]
+        img = tifffile.imread(img_path)
+        mask = tifffile.imread(mask_path)
 
         if self.mode == 'train':
             augmenter = ImageAugmenter(seed=None)
@@ -90,13 +126,8 @@ class BacSegmentDataset(Dataset):
             normalized_masks[i] = normalize_min_max(mask_patches[i])
 
         # convert to tensors
-
-        if self.precision == 'half':
-            torch_img = torch.from_numpy(normalized_images).float().half()
-            torch_mask = torch.from_numpy(normalized_masks).float().half()
-        else:
-            torch_img = torch.from_numpy(normalized_images).float()
-            torch_mask = torch.from_numpy(normalized_masks).float()
+        torch_img = torch.from_numpy(normalized_images).float()
+        torch_mask = torch.from_numpy(normalized_masks).float()
                 
         return torch_img, torch_mask
 
@@ -107,7 +138,7 @@ class BacSegmentDataset(Dataset):
         return high_prop_mask
     
     def __len__(self):
-        return len(self.image_files)
+        return len(self.image_pairs)
 
 
 def collate_fn(batch):
