@@ -223,3 +223,11 @@ def get_device():
         return torch.device("mps")
     else:
         return torch.device("cpu")
+
+def tensor_debbuger(tensor, name='tensor'):
+    print(f'{name} shape: {tensor.shape}')
+    print(f'nans {name} max: {torch.isnan(tensor).any()}')
+    print(f'inf {name} max: {torch.isinf(tensor).any()}')
+
+    print(f'{name} max: {tensor.max()}')
+    print(f'{name} min: {tensor.min()}')
