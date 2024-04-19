@@ -4,6 +4,8 @@ import random
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 
+from datetime import datetime
+import json
 import time
 import torch
 from torch.utils.data import DataLoader
@@ -11,17 +13,18 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.tensorboard import SummaryWriter
 from semantic_bac_segment.loss_functions import DiceLoss, WeightedBinaryCrossEntropy
 from semantic_bac_segment.data_loader import BacSegmentDataset, collate_fn, TrainSplit
-from semantic_bac_segment.utils import empty_gpu_cache, get_device
+from semantic_bac_segment.utils import empty_gpu_cache, get_device, tensor_debbuger
+
 
 class UNetTrainer:
-    def __init__(self, train_dir, models_dir, input_size, precision):
+    def __init__(self, train_dir, models_dir, input_size, precision, metadata):
         self.train_dir = train_dir
         self.models_dir = models_dir
         self.input_size = input_size
         self.precision = precision
         self.previous_weights = None
         self.device = get_device()
-
+        self.metadata= metadata
 
     def add_model(self, nn_model, pooling_steps=4, previous_weights=None):
         
@@ -37,8 +40,8 @@ class UNetTrainer:
 
     def read_data(self, batch_size, num_workers, subsetting, filter_threshold, val_ratio, collate_fn):
         
-        splitter=TrainSplit(os.path.join(self.train_dir, 'source_norm/'), 
-                   os.path.join(self.train_dir, 'mask_cleaned/'), val_ratio=val_ratio)
+        splitter=TrainSplit(os.path.join(self.train_dir, 'source_norm_cropped/'), 
+                   os.path.join(self.train_dir, 'mask_cropped_expanded/'), val_ratio=val_ratio)
         splitter.get_samplepairs()
         train_pairs, val_pairs=splitter.split_samples()
         # Read data
@@ -51,7 +54,7 @@ class UNetTrainer:
         val_dataset = BacSegmentDataset(val_pairs, 
                                              mode='validation', 
                                              patch_size=self.input_size, 
-                                             subsetting=0, 
+                                             subsetting=subsetting, 
                                              precision=self.precision)
         num_workers=num_workers
         self.batch_size=batch_size
@@ -133,7 +136,11 @@ class UNetTrainer:
                 if val_loss < best_loss:
                     best_loss = val_loss
                     torch.save(self.model.state_dict(), os.path.join(self.models_dir, f'{model_name}_best_model.pth'))
-
+                    now = datetime.now()
+                    formatted_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                    self.metadata['date'] = formatted_date
+                    with open(os.path.join(self.models_dir, f'{model_name}_metadata.json'), 'w') as f:
+                        json.dump(self.metadata, f)
             epoch_tac = time.time()
             train_loss= train_loss/len(self.data_loader)
             val_loss= val_loss/len(self.data_loader)
