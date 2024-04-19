@@ -3,6 +3,20 @@ import torch.nn as nn
 import torchvision.transforms.functional as TF
 
 class DoubleConv(nn.Module):
+    """
+    Double Convolution Block.
+
+    This class represents a double convolution block in the UNet architecture.
+    It consists of two convolutional layers, each followed by batch normalization and ReLU activation.
+
+    Args:
+        in_channels (int): Number of input channels.
+        out_channels (int): Number of output channels.
+
+    Attributes:
+        conv (nn.Sequential): Sequential container of convolutional layers.
+
+    """
     def __init__(self, in_channels, out_channels):
         super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
@@ -18,6 +32,28 @@ class DoubleConv(nn.Module):
         return self.conv(x)
 
 class UNET(nn.Module):
+    """
+    UNet Architecture.
+
+    This class represents the UNet architecture for semantic segmentation.
+    It consists of an encoder (contracting path) and a decoder (expanding path) with skip connections.
+
+    Args:
+        in_channels (int): Number of input channels (default: 1).
+        out_channels (int): Number of output channels (default: 1).
+        features (list): List of feature sizes for each level of the UNet (default: [64, 128, 256, 512]).
+        init_features (int): Initial number of features (default: 64).
+        pooling_steps (int): Number of pooling steps in the encoder (default: 4).
+
+    Attributes:
+        ups (nn.ModuleList): List of modules for the expanding path.
+        downs (nn.ModuleList): List of modules for the contracting path.
+        pool (nn.MaxPool2d): Max pooling layer for downsampling.
+        bottleneck (DoubleConv): Bottleneck layer at the bottom of the UNet.
+        final_conv (nn.Conv2d): Final convolutional layer for output.
+
+    """
+
     def __init__(
             self, in_channels=1, out_channels=1, features=[64, 128, 256, 512], init_features=64, pooling_steps=4
     ):
