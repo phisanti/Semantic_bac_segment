@@ -107,7 +107,11 @@ class BacSegmentDataset(Dataset):
                 mask_patches = mask_patches[high_prop_mask]
 
             if self.subsetting:
-                random_subset = np.random.choice(img_patches.shape[0], size=self.subsetting, replace=False)
+                if self.subsetting > img_patches.shape[0]:
+                    subset_size = img_patches.shape[0]
+                else:
+                    subset_size = self.subsetting
+                random_subset = np.random.choice(img_patches.shape[0], size=subset_size, replace=False)
                 img_patches = img_patches[random_subset]
                 mask_patches = mask_patches[random_subset]
 
