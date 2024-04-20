@@ -26,9 +26,9 @@ class UNetTrainer:
         self.device = get_device()
         self.metadata= metadata
 
-    def add_model(self, nn_model, pooling_steps=4, previous_weights=None):
+    def add_model(self, nn_model, pooling_steps=4, features=[64, 128, 256, 512],  previous_weights=None):
         
-        model = nn_model(pooling_steps=pooling_steps)
+        model = nn_model(pooling_steps=pooling_steps, features=features)
         if previous_weights:
             model.load_weights(previous_weights)
         
@@ -67,7 +67,7 @@ class UNetTrainer:
     def train(self, num_epochs=5, model_name="", verbose=True, learning_rate=0.001, gamma=0.1, step_size=1, criterion=DiceLoss()):
 
         device=self.device
-        writer = SummaryWriter()
+        writer = SummaryWriter(comment=f'-{model_name}')
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
