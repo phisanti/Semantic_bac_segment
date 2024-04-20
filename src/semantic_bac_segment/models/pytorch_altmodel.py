@@ -113,6 +113,12 @@ class UNET(nn.Module):
 
 
     def forward(self, x):
+        """Forward pass of the model.
+        Args:
+            x (torch.Tensor): Input tensor.
+        Returns:
+            torch.Tensor: Output tensor after passing through the model.
+        """
         skip_connections = []
 
         for down in self.downs:
@@ -132,6 +138,5 @@ class UNET(nn.Module):
 
             concat_skip = torch.cat((skip_connection, x), dim=1)
             x = self.ups[idx+1](concat_skip)
-        
 
-        return torch.sigmoid(self.final_conv(x)) 
+        return torch.sigmoid(self.final_conv(x))

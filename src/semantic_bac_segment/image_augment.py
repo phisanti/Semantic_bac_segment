@@ -10,6 +10,14 @@ from scipy.ndimage import map_coordinates, gaussian_filter
 from semantic_bac_segment.utils import get_bit_depth
 
 class ImageAugmenter:
+    """Apply a random transformation to the input image and mask for image augmentation during training.
+    Args:
+        img (numpy.ndarray): Input image as a NumPy array.
+        mask (numpy.ndarray): Corresponding mask as a NumPy array.
+        verbose (bool, optional): Whether to print the applied transformation. Defaults to False.
+    Returns:
+        Tuple[numpy.ndarray, numpy.ndarray]: Augmented image and mask.
+    """
     def __init__(self, seed = None):
         self.transfroms = [
             self.flip,
