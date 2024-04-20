@@ -39,6 +39,57 @@ class DiceLoss(nn.Module):
         return 1 - dice
 
 
+class weightedDiceLoss(nn.Module):
+    def __init__(self, weight=None, size_average=True, is_sigmoid=True, zero_weight=0.5, edge_weight=2.0):
+        super(weightedDiceLoss, self).__init__()
+        self.weight = weight
+        self.size_average = size_average
+        self.is_sigmoid = is_sigmoid
+        self.zero_weight = zero_weight
+        self.edge_weight = edge_weight
+
+    def forward(self, inputs, targets, smooth=.1):
+        inputs = inputs.float()
+        targets = targets.float()
+
+        if self.is_sigmoid:
+            pass
+        else:
+            inputs = torch.sigmoid(inputs)
+
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        # Weight lower the predictions where the target is 0
+        zero_mask = (targets == 0)
+        inputs = inputs * torch.where(zero_mask, self.zero_weight, 1)
+
+        # Reward edges and borders of positive features
+        edge_mask = self.get_edge_mask(targets)
+        inputs = inputs * torch.where(edge_mask, self.edge_weight, 1)
+
+        intersection = (inputs * targets).sum()
+        dice = (2. * intersection + smooth) / (inputs.sum() + targets.sum() + smooth)
+
+        if self.weight is not None:
+            dice = dice * self.weight
+
+        if self.size_average:
+            dice = dice.mean()
+        else:
+            dice = dice.sum()
+
+        return 1 - dice
+
+    def get_edge_mask(self, targets):
+        # Create a binary edge mask by applying edge detection on the target tensor
+        edge_mask = torch.zeros_like(targets, dtype=torch.bool)
+        edge_mask = edge_mask.bool()  # Convert to boolean tensor
+        edge_mask[1:] |= (targets[1:] != targets[:-1]).bool()
+        edge_mask[:-1] |= (targets[:-1] != targets[1:]).bool()
+        return edge_mask
+
+
 class WeightedBinaryCrossEntropy(nn.Module):
     def __init__(self, class_weights = [0.8, 1.2], is_sigmoid=True):
         super(WeightedBinaryCrossEntropy, self).__init__()
