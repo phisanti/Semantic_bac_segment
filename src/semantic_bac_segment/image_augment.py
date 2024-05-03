@@ -72,7 +72,8 @@ class ImageAugmenter:
                        img: np.ndarray, 
                        mask: np.ndarray, 
                        mean=None, 
-                       std=None) -> Tuple[np.ndarray, np.ndarray]:
+                       std=None,
+                       normalised=True) -> Tuple[np.ndarray, np.ndarray]:
         """
         Adds Gaussian noise to an input image.
 
@@ -93,7 +94,13 @@ class ImageAugmenter:
             std = img.std()
 
         # Add Gaussian noise
-        noise = np.random.normal(mean, std, img.shape)
+        if normalised:
+            variance = std **2
+            alpha = mean * ((mean * (1 - mean)) / variance - 1)
+            beta = (1 - mean) * ((mean * (1 - mean)) / variance - 1)
+            noise = np.random.beta(alpha, beta, img.shape)
+        else:
+            noise = np.random.normal(mean, std, img.shape)
         noisy_img = img + noise
 
         # Clip values to image range for
