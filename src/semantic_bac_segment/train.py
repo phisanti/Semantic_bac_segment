@@ -95,12 +95,14 @@ class UNetTrainer2:
                                     patch_size=self.input_size, 
                                     subsetting=subsetting, 
                                     filter_threshold=filter_threshold, 
-                                    precision=self.precision)
+                                    precision=self.precision,
+                                    logger=self.logger)
         val_dataset = BacSegmentDataset(val_pairs, 
                                         mode='validation', 
                                         patch_size=self.input_size, 
                                         subsetting=subsetting, 
-                                        precision=self.precision)
+                                        precision=self.precision,
+                                        logger=self.logger)
 
         num_workers = num_workers
         self.batch_size = batch_size
@@ -183,6 +185,9 @@ class UNetTrainer2:
                 tensor_debugger(target, 'target', self.logger)
 
             output = model(data)
+            if self.logger.is_level('DEBUG'):
+                tensor_debugger(output, 'output', self.logger)
+
             loss = criterion(output, target)
             total_loss += loss.item()
 
@@ -194,8 +199,6 @@ class UNetTrainer2:
             inference_times.append(time.time() - tic)
             tic = time.time()
             
-            if self.logger.is_level('DEBUG'):
-                tensor_debugger(output, 'output', self.logger)
 
             if not is_train and batch_idx == log_image_index:
                 self.writer.add_images('images', data, epoch)
