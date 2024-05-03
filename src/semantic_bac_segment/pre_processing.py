@@ -43,15 +43,20 @@ class ImageAdapter:
             self.n_patches_h = image_patches.shape[0]
             image_patches = image_patches.reshape(-1, self.patch_size, self.patch_size)
         elif len(self.img.shape) == 3:
-            step_size = (1, self.patch_size - self.overlap_size, self.patch_size - self.overlap_size)
-            img = self.fit_image(self.img, step_size)
-            image_patches = view_as_windows(img, (img.shape[0], self.patch_size, self.patch_size), step_size)
+            step_size = (self.patch_size - self.overlap_size, self.patch_size - self.overlap_size)
+            image_patches = []
+            for channel in range(self.img.shape[0]):
+                img_channel = self.img[channel]
+                img_channel = self.fit_image(img_channel, step_size)
+                channel_patches = view_as_windows(img_channel, (self.patch_size, self.patch_size), step_size)
 
-            # Flatten into patches
+                # Flatten into patches
+                channel_patches = channel_patches.reshape(-1, self.patch_size, self.patch_size)
+                image_patches.append(channel_patches)
+            image_patches = np.stack(image_patches, axis=1)
             self.n_patches_w = image_patches.shape[2]
             self.n_patches_h = image_patches.shape[1]
-            image_patches = image_patches.reshape(-1, img.shape[0], self.patch_size, self.patch_size)
-
+        
         return image_patches
 
     def stich_patches(self, image_patches: np.ndarray) -> np.ndarray:
