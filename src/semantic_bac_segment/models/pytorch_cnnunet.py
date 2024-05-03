@@ -133,7 +133,7 @@ class Unet(nn.Module):
         u1 = self.c6(u1)
         # Final layer used for pixel-wise convolution
         px = self.px(u1)
-        return px
+        return torch.sigmoid(px)
 
 
 class Unet_dynamic(nn.Module):
