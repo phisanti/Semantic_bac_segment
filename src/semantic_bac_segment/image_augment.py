@@ -7,7 +7,7 @@ import numpy as np
 import random
 import cv2
 from scipy.ndimage import map_coordinates, gaussian_filter
-from semantic_bac_segment.utils import get_bit_depth
+from semantic_bac_segment.utils import get_bit_depth, invert_image
 
 class ImageAugmenter:
     """Apply a random transformation to the input image and mask for image augmentation during training.
@@ -20,10 +20,11 @@ class ImageAugmenter:
     """
     def __init__(self, seed = None):
         self.transfroms = [
-            self.flip,
-            self.elastic_transform,
+#            self.flip,
+#            self.elastic_transform,
             self.gaussian_noise,
             self.change_brightness,
+#            self.invert,
             self.no_transformation 
         ]
         self.seed = seed
@@ -101,6 +102,21 @@ class ImageAugmenter:
         return noisy_img, mask
 
 
+    def invert(self, img: np.ndarray, mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Invert the input image.
+
+        Args:
+            img (numpy.ndarray): Input image as a NumPy array.
+            mask (numpy.ndarray): Corresponding mask as a NumPy array.
+
+        Returns:
+            Tuple[numpy.ndarray, numpy.ndarray]: Inverted image and original mask.
+        """
+        bit_depth = get_bit_depth(img)
+        inverted_img = invert_image(img, bit_depth)
+        return inverted_img, mask
+
 
     def change_brightness(self, 
                           img: np.ndarray, 
@@ -154,6 +170,7 @@ class ImageAugmenter:
 
         img=map_coordinates(img, indices, order=1).reshape(shape)
         mask=map_coordinates(mask, indices, order=1).reshape(shape)
+        
 
         return img, mask
     
@@ -218,4 +235,81 @@ if __name__ == '__main__':
             assert not np.all(aug_img[0, :] == img_copy[0, :])
 
 
+def elastic_transform_ndim(
+                      img: np.ndarray, 
+                      ndim: int,
+                      alpha=34, 
+                      sigma=5, 
+                      random_state=None) -> Tuple[np.ndarray, np.ndarray]:
+    """Apply elastic deformation to images as augmentation.
+    
+    Args:
+        img: Input image as NumPy array.
+        ndim: Number of dimensions of the input image (2 or 3).
+        alpha: Scale factor for deformation.
+        sigma: Gaussian filter parameter.
+        random_state: RandomState instance.
+    
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Augmented image and mask.
+    """
+    if random_state is None:
+        random_state = np.random.RandomState(None)
+        
+    shape = img.shape
+    
+    if ndim == 2:
+        dx = gaussian_filter((random_state.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+        dy = gaussian_filter((random_state.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+        
+        x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
+        indices = np.reshape(y+dy, (-1, 1)), np.reshape(x+dx, (-1, 1))
+        
+        img = map_coordinates(img, indices, order=1).reshape(shape)
+    
+    elif ndim == 3:
+        dx = gaussian_filter((random_state.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+        dy = gaussian_filter((random_state.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+        dz = gaussian_filter((random_state.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+        
+        x, y, z = np.meshgrid(np.arange(shape[2]), np.arange(shape[1]), np.arange(shape[0]))
+        indices = np.reshape(z+dz, (-1, 1)), np.reshape(y+dy, (-1, 1)), np.reshape(x+dx, (-1, 1))
+        
+        img = map_coordinates(img, indices, order=1).reshape(shape)
+    
+    else:
+        raise ValueError("Invalid number of dimensions. `ndim` must be either 2 or 3.")
+    
+    return img
 
+
+
+def elastic_transform(self, 
+                        img: np.ndarray, 
+                        alpha=34, 
+                        sigma=5, 
+                        random_state=None) -> Tuple[np.ndarray, np.ndarray]:
+    """Apply elastic deformation to images as augmentation.
+    
+    Args:
+        img: Input image as NumPy array.
+        mask: Corresponding mask as NumPy array.
+        alpha: Scale factor for deformation.
+        sigma: Gaussian filter parameter.
+        random_state: RandomState instance.
+    
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Augmented image and mask.
+    """
+    if random_state is None:
+        random_state = np.random.RandomState(None)
+        
+    shape = img.shape
+    dx = gaussian_filter((random_state.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+    dy = gaussian_filter((random_state.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+
+    x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
+    indices = np.reshape(y+dy, (-1, 1)), np.reshape(x+dx, (-1, 1))
+
+    img=map_coordinates(img, indices, order=1).reshape(shape)
+        

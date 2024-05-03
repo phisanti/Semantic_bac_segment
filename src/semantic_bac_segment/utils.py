@@ -224,10 +224,17 @@ def get_device():
     else:
         return torch.device("cpu")
 
-def tensor_debbuger(tensor, name='tensor'):
-    print(f'{name} shape: {tensor.shape}')
-    print(f'nans {name} max: {torch.isnan(tensor).any()}')
-    print(f'inf {name} max: {torch.isinf(tensor).any()}')
+def tensor_debugger(tensor, name='tensor', logger=None):
+    messages = [
+        f'{name} shape: {tensor.shape}',
+        f'nans {name} max: {torch.isnan(tensor).any()}',
+        f'inf {name} max: {torch.isinf(tensor).any()}',
+        f'{name} max: {tensor.max()}',
+        f'{name} min: {tensor.min()}'
+    ]
 
-    print(f'{name} max: {tensor.max()}')
-    print(f'{name} min: {tensor.min()}')
+    for message in messages:
+        if logger is not None and logger.is_level('DEBUG'):
+            logger.log(message, level='DEBUG')
+        else:
+            print(message)

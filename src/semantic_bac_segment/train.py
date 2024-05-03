@@ -13,10 +13,10 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.tensorboard import SummaryWriter
 from semantic_bac_segment.loss_functions import DiceLoss, WeightedBinaryCrossEntropy
 from semantic_bac_segment.data_loader import BacSegmentDataset, collate_fn, TrainSplit
-from semantic_bac_segment.utils import empty_gpu_cache, get_device, tensor_debbuger
+from semantic_bac_segment.utils import empty_gpu_cache, get_device, tensor_debugger
+from semantic_bac_segment.trainlogger import Logger
 
-
-class UNetTrainer:
+class UNetTrainer2:
     """
     A class that represents a UNetTrainer for training a U-Net model for semantic bacterial segmentation.
 
@@ -40,7 +40,7 @@ class UNetTrainer:
     """
     
 
-    def __init__(self, train_dir, models_dir, input_size, precision, metadata):
+    def __init__(self, train_dir, models_dir, input_size, precision, metadata, log_level='INFO'):
         self.train_dir = train_dir
         self.models_dir = models_dir
         self.input_size = input_size
@@ -48,8 +48,9 @@ class UNetTrainer:
         self.previous_weights = None
         self.device = get_device()
         self.metadata= metadata
+        self.logger = Logger('UnetTrainer', level=log_level)
 
-    def add_model(self, nn_model, pooling_steps=4, features=[64, 128, 256, 512], previous_weights=None):
+    def add_model(self, nn_model, pooling_steps=4, features=[64, 128, 256, 512], previous_weights=None, dropout=.2):
         """
         Adds a neural network model to the training object.
 
@@ -59,10 +60,10 @@ class UNetTrainer:
             features (list): The number of features in each layer of the model (default: [64, 128, 256, 512]).
             previous_weights (str): Path to the previous weights file to load (default: None).
         """
-        model = nn_model(pooling_steps=pooling_steps, features=features)
-        if previous_weights:
-            model.load_weights(previous_weights)
-        
+#        model = nn_model(pooling_steps=pooling_steps, features=features, dropout_rate=dropout)
+#        if previous_weights:
+#            model.load_weights(previous_weights)
+        model=nn_model
         model = model.to(self.device)
         torch.compile(model)
         
@@ -81,9 +82,10 @@ class UNetTrainer:
             val_ratio (float): The ratio of validation data to split from the training data.
             collate_fn (callable): The function used to collate the samples into batches.
         """
-
-        splitter = TrainSplit(os.path.join(self.train_dir, 'source_norm_cropped/'), 
-                              os.path.join(self.train_dir, 'mask_cropped_expanded/'), val_ratio=val_ratio)
+        self.source_folder='source_norm2/'
+        self.mask_folder='multiclass_masks/'
+        splitter = TrainSplit(os.path.join(self.train_dir, self.source_folder), 
+                              os.path.join(self.train_dir, self.mask_folder), val_ratio=val_ratio)
         splitter.get_samplepairs()
         train_pairs, val_pairs = splitter.split_samples()
 
@@ -105,8 +107,6 @@ class UNetTrainer:
         self.data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, pin_memory=True)
         self.validation_loader = DataLoader(val_dataset, batch_size=1, collate_fn=collate_fn, pin_memory=True)
 
-        self.training_size = len(self.data_loader)
-        self.validation_size = len(self.validation_loader)
 
     def train(self, num_epochs=5, model_name="", verbose=True, learning_rate=0.001, gamma=0.1, step_size=1, criterion=DiceLoss()):
         """
@@ -121,8 +121,7 @@ class UNetTrainer:
             step_size (int): The step size for the StepLR scheduler (default: 1).
             criterion: The loss function used for training (default: DiceLoss()).
         """
-        device=self.device
-        writer = SummaryWriter(comment=f'-{model_name}')
+        self.writer = SummaryWriter(comment=f'-{model_name}')
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
@@ -130,88 +129,81 @@ class UNetTrainer:
         tic = time.time()
 
         if verbose:
-            print(f'Start training')
+            self.logger.log(f'Start training model {model_name}')
+            self.logger.log(f'Training on source: {self.source_folder} and mask: {self.mask_folder}')
 
         for epoch in range(num_epochs):
-            epoch_tic = time.time()
             self.model.train()
-            train_loss=0.0
-            for images, masks in self.data_loader:
-                                
-                images = images.to(device)
-                masks = masks.to(device)
+            train_loss, _ = self.run_epoch(self.data_loader, self.model, criterion, optimizer, is_train=True, epoch=epoch)
+            scheduler.step()
 
-                outputs = self.model(images)
-                
-                loss = criterion(outputs, masks)
-                loss_cpu = loss.to('cpu')
-                train_loss += loss_cpu.item()
+            self.model.eval()
+            with torch.no_grad():
+                val_loss, inference_time = self.run_epoch(self.validation_loader, self.model, criterion, is_train=False, epoch=epoch)
+
+            self.log_to_tensorboard('Train', train_loss, _, epoch)
+            self.log_to_tensorboard('Validation', val_loss, inference_time, epoch)
+
+            if val_loss < best_loss:
+                best_loss = val_loss
+                torch.save(self.model.state_dict(), os.path.join(self.models_dir, f'{model_name}_best_model.pth'))
+                now = datetime.now()
+                formatted_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                self.metadata['date'] = formatted_date
+                with open(os.path.join(self.models_dir, f'{model_name}_metadata.json'), 'w') as f:
+                    json.dump(self.metadata, f)
+
+            if verbose:
+                self.logger.log(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}')
+
+        torch.save(self.model.state_dict(), os.path.join(self.models_dir, f'{model_name}_last_model.pth'))
+        self.writer.close()
+
+        if verbose:
+            self.logger.log(f'Total training time: {time.time()-tic:.1f} seconds')
+
+    def move_to_device(self, data):
+        device=self.device
+        if isinstance(data, (list,tuple)):
+            return [self.move_to_device(x, device) for x in data]
+        return data.to(device)
+
+    def run_epoch(self, loader, model, criterion, optimizer=None, is_train=True, epoch=0):
+        total_loss = 0.0
+        inference_times = []
+        tic = time.time()
+
+        if not is_train:
+            log_image_index = random.randint(0, len(loader) - 1)
+
+        for batch_idx, (data, target) in enumerate(loader):
+            data, target = self.move_to_device(data), self.move_to_device(target)
+            if self.logger.is_level('DEBUG'):
+                tensor_debugger(data, 'data', self.logger)
+                tensor_debugger(target, 'target', self.logger)
+
+            output = model(data)
+            loss = criterion(output, target)
+            total_loss += loss.item()
+
+            if is_train:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
-            scheduler.step()
-            self.model.eval()
-            del images, masks
-            empty_gpu_cache(self.device)
+            inference_times.append(time.time() - tic)
+            tic = time.time()
+            
+            if self.logger.is_level('DEBUG'):
+                tensor_debugger(output, 'output', self.logger)
 
-            with torch.no_grad():
-                n=random.randint(0, self.validation_size)
-                index=0
-                val_loss = 0.0
-                inference_times=np.zeros(self.validation_size)
+            if not is_train and batch_idx == log_image_index:
+                self.writer.add_images('images', data, epoch)
+                self.writer.add_images('masks', target, epoch)
+                self.writer.add_images('predictions', output, epoch)
 
-                for val_images, val_masks in self.validation_loader:
-                    
-                    inference_tic = time.time()
-                    val_images = val_images.to(device)
-                    val_masks = val_masks.to(device)
-                    
+        return total_loss / len(loader), np.mean(inference_times)
 
-                    output_imgs = self.model(val_images)
-                    
-                    inference_tac = time.time()
-                    val_loss += criterion(output_imgs, val_masks)
-
-                    if index == n:
-                        # Add images and masks to TensorBoard
-                        writer.add_images('images', val_images, epoch)
-                        writer.add_images('masks', val_masks, epoch)
-                        writer.add_images('predictions', output_imgs, epoch)
-
-                    if verbose:
-                        print(f"Inference time: {inference_tac-inference_tic:.2f} seconds")
-                    inference_times[index]=inference_tac-inference_tic
-                    index += 1
-
-                    del val_images, val_masks, output_imgs
-                    empty_gpu_cache(self.device)
-
-
-                if val_loss < best_loss:
-                    best_loss = val_loss
-                    torch.save(self.model.state_dict(), os.path.join(self.models_dir, f'{model_name}_best_model.pth'))
-                    now = datetime.now()
-                    formatted_date = now.strftime("%Y-%m-%d %H:%M:%S")
-                    self.metadata['date'] = formatted_date
-                    with open(os.path.join(self.models_dir, f'{model_name}_metadata.json'), 'w') as f:
-                        json.dump(self.metadata, f)
-            epoch_tac = time.time()
-            train_loss= train_loss/len(self.data_loader)
-            val_loss= val_loss/len(self.data_loader)
-            writer.add_scalar('Train Loss', train_loss, epoch)
-            writer.add_scalar('Validation Loss', val_loss, epoch)
-            writer.add_scalar('Epoch Time', epoch_tac-epoch_tic, epoch)
-            writer.add_scalar('Inference Time', np.mean(inference_times), epoch)
-
-            if verbose:
-                print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}')
-                print(f'Training epoch time: {epoch_tac-epoch_tic} seconds')
-
-        torch.save(self.model.state_dict(), os.path.join(self.models_dir, f'{model_name}_last_model.pth'))
-        writer.close()
-
-        if verbose:
-            tac=time.time()
-            print(f'Total training time: {tac-tic:.1f} seconds')
-
+    def log_to_tensorboard(self, name, loss, time, epoch):
+        self.writer.add_scalar(f'{name} Loss', loss, epoch)
+        self.writer.add_scalar(f'{name} Time', time, epoch)

@@ -90,6 +90,49 @@ class weightedDiceLoss(nn.Module):
         return edge_mask
 
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
+from semantic_bac_segment.utils import tensor_debugger 
+class MultiClassDiceLoss(nn.Module):
+    def __init__(self, weight=None, size_average=True, is_sigmoid=True, ignore_index=-100):
+        super(MultiClassDiceLoss, self).__init__()
+        self.weight = weight
+        self.size_average = size_average
+        self.is_sigmoid = is_sigmoid
+        self.ignore_index = ignore_index
+    def forward(self, inputs, targets, smooth=1):
+        if self.is_sigmoid:
+            inputs = torch.sigmoid(inputs)
+        
+        # Flatten the input and target tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        # Ignore the samples with the ignore_index
+        valid_indices = targets != self.ignore_index
+        inputs = inputs[valid_indices]
+        targets = targets[valid_indices]
+
+        # Compute the Dice loss for each class
+        dice_losses = []
+        num_classes = inputs.unique().size(0)
+        for class_id in range(num_classes):
+            class_inputs = (inputs == class_id).float()
+            class_targets = (targets == class_id).float()
+            intersection = (class_inputs * class_targets).sum()
+            dice = (2. * intersection + smooth) / (class_inputs.sum() + class_targets.sum() + smooth)
+            dice_losses.append(1 - dice)
+
+        # Take the average or sum of the Dice losses
+        if self.size_average:
+            dice_loss = torch.mean(torch.stack(dice_losses))
+        else:
+            dice_loss = torch.sum(torch.stack(dice_losses))
+
+        return dice_loss
+
+
 class WeightedBinaryCrossEntropy(nn.Module):
     def __init__(self, class_weights = [0.8, 1.2], is_sigmoid=True):
         super(WeightedBinaryCrossEntropy, self).__init__()

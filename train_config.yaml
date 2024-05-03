@@ -10,21 +10,28 @@ trainer_params:
 # Training parameters
 model_params:
   previous_weights: null        # Path to previous weights to continue training
-  pooling_steps: 4              # Number of pooling steps in the model
+  pooling_steps: 3              # Number of pooling steps in the model
+  features:
+    - 4
+    - 8
+    - 16
+    - 32
+    - 64
+    - 128
 
 # Data import parameters
 data_params:
   batch_size: 1                 # Batch size for training
   num_workers: 2                # Number of workers for the DataLoader class (load images in parallel), currently not working
-  subsetting: 5                 # Percentage of the training data to use or number of images to subset
-  filter_threshold: 0.25        # Threshold to filter out images with low mask coverage
+  subsetting: 50                 # Percentage of the training data to use or number of images to subset
+  filter_threshold: 0.05        # Threshold to filter out images with low mask coverage
   val_ratio: .33                # Validation ratio (percentage of data to use for validation)
 
 # Optimizer parameters (common names, so no explanation needed)
 optimizer_params:
-  num_epochs: 21
-  model_name: 'unet_model_test_4'
+  num_epochs: 210
+  model_name: 'unet_model_expandedmask_17_-leakyrelu-4-128features-sigmoid-256patch_fine_tuned'
   verbose: true
-  learning_rate: 0.003
-  gamma: 0.1
-  step_size: 7
+  learning_rate: 0.005
+  gamma: 0.5
+  step_size: 10
