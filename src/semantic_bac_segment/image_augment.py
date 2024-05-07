@@ -20,11 +20,11 @@ class ImageAugmenter:
     """
     def __init__(self, seed = None):
         self.transfroms = [
-#            self.flip,
-#            self.elastic_transform,
-            self.gaussian_noise,
+            self.flip,
+            self.elastic_transform,
+#            self.gaussian_noise,
             self.change_brightness,
-#            self.invert,
+            self.invert,
             self.no_transformation 
         ]
         self.seed = seed
@@ -95,9 +95,12 @@ class ImageAugmenter:
 
         # Add Gaussian noise
         if normalised:
-            variance = std **2
-            alpha = mean * ((mean * (1 - mean)) / variance - 1)
-            beta = (1 - mean) * ((mean * (1 - mean)) / variance - 1)
+            alpha = (mean ** 2) * ((1 - mean) / (std ** 2) - 1)
+            beta = alpha * (1 - mean) / mean
+            if alpha <= 0:
+                alpha = 2
+            if beta <= 0:
+                beta = 2
             noise = np.random.beta(alpha, beta, img.shape)
         else:
             noise = np.random.normal(mean, std, img.shape)

@@ -90,45 +90,53 @@ class weightedDiceLoss(nn.Module):
         return edge_mask
 
 
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
-from semantic_bac_segment.utils import tensor_debugger 
 class MultiClassDiceLoss(nn.Module):
-    def __init__(self, weight=None, size_average=True, is_sigmoid=True, ignore_index=-100):
+    def __init__(self, weight=None, size_average=True, is_sigmoid=True):
         super(MultiClassDiceLoss, self).__init__()
-        self.weight = weight
+        if weight is None:
+            self.weight = [1.0] * 1  # Default to equal weight for single-channel input
+        else:
+            self.weight = weight
         self.size_average = size_average
         self.is_sigmoid = is_sigmoid
-        self.ignore_index = ignore_index
+    
     def forward(self, inputs, targets, smooth=1):
+
+        inputs = inputs.float()
+        targets = targets.float()
+
         if self.is_sigmoid:
+            pass
+        else:
             inputs = torch.sigmoid(inputs)
         
-        # Flatten the input and target tensors
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        # Ignore the samples with the ignore_index
-        valid_indices = targets != self.ignore_index
-        inputs = inputs[valid_indices]
-        targets = targets[valid_indices]
 
         # Compute the Dice loss for each class
-        dice_losses = []
-        num_classes = inputs.unique().size(0)
-        for class_id in range(num_classes):
-            class_inputs = (inputs == class_id).float()
-            class_targets = (targets == class_id).float()
-            intersection = (class_inputs * class_targets).sum()
-            dice = (2. * intersection + smooth) / (class_inputs.sum() + class_targets.sum() + smooth)
-            dice_losses.append(1 - dice)
+        dice_scores = []
+        num_channels = inputs.shape[1]
+        for channel in range(num_channels):
+            input_channel = inputs[:, channel, :, :]
+            target_channel = targets[:, channel, :, :]
 
-        # Take the average or sum of the Dice losses
+            # Flatten the input and target tensors for the current channel
+            input_channel = input_channel.reshape(-1)
+            target_channel = target_channel.reshape(-1)
+
+
+            intersection = (input_channel * target_channel).sum()
+            dice = (2. * intersection + smooth) / (input_channel.sum() + target_channel.sum() + smooth)
+            dice_scores.append(dice)
+
+
+        # Calculate the weighted sum of the Dice scores
+        dice_scores = [score * weight for score, weight in zip(dice_scores, self.weight)]
+
+        dice_loss = 1 - sum(dice_scores) / num_channels
+
         if self.size_average:
-            dice_loss = torch.mean(torch.stack(dice_losses))
+            dice_loss = dice_loss.mean()
         else:
-            dice_loss = torch.sum(torch.stack(dice_losses))
+            dice_loss = dice_loss.sum()
 
         return dice_loss
 
@@ -161,3 +169,54 @@ class WeightedBinaryCrossEntropy(nn.Module):
         weighted_bce_loss = torch.mean(weighted_bce_loss)
         
         return weighted_bce_loss
+
+from semantic_bac_segment.utils import tensor_debugger
+
+class MultiClassWeightedBinaryCrossEntropy(nn.Module):
+    def __init__(self, class_weights=None, is_sigmoid=True):
+        super(MultiClassWeightedBinaryCrossEntropy, self).__init__()
+        self.is_sigmoid = is_sigmoid
+        self.class_weights = class_weights
+
+    def forward(self, output, target):
+
+        num_channels = output.shape[1]
+        if self.class_weights is None:
+            self.class_weights = [1.0] * num_channels  # Default to equal weight for single-channel input
+        else:
+            self.class_weights = self.class_weights
+
+
+        # Apply sigmoid activation to the output
+        if self.is_sigmoid:
+            pass
+        else:
+            output = torch.sigmoid(output)
+
+        # Compute the weighted binary cross-entropy loss for each channel
+        bce_losses = []
+
+        for channel in range(num_channels):
+            output_channel = output[:, channel, :, :]
+            target_channel = target[:, channel, :, :]
+
+            # Flatten the output and target tensors for the current channel
+            output_channel = output_channel.reshape(-1)
+            target_channel = target_channel.reshape(-1)
+
+            # Calculate the binary cross-entropy loss for the current channel
+            bce_loss = nn.functional.binary_cross_entropy(output_channel, target_channel, reduction='none')
+
+            # Apply class weights to the loss for the current channel
+            weight_vector = target_channel * self.class_weights[channel] + (1 - target_channel) * self.class_weights[channel]
+            weighted_bce_loss = weight_vector * bce_loss
+
+            # Take the mean of the weighted loss for the current channel
+            weighted_bce_loss = torch.mean(weighted_bce_loss)
+
+            bce_losses.append(weighted_bce_loss)
+
+        # Calculate the average of the weighted binary cross-entropy losses across all channels
+        multi_channel_bce_loss = sum(bce_losses) / num_channels
+
+        return multi_channel_bce_loss

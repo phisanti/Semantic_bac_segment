@@ -68,7 +68,7 @@ class UNet(nn.Module):
             x = torch.cat((x, encs[-(i+1)]), dim=1)
             x = decoder(x)
 
-        return torch.sigmoid(self.conv(x))
+        return self.conv(x)
 
 
     @staticmethod

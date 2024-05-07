@@ -83,7 +83,7 @@ class UNetTrainer2:
             collate_fn (callable): The function used to collate the samples into batches.
         """
         self.source_folder='source_norm2/'
-        self.mask_folder='multiclass_masks/'
+        self.mask_folder='multiclass_masks/channel_0'
         splitter = TrainSplit(os.path.join(self.train_dir, self.source_folder), 
                               os.path.join(self.train_dir, self.mask_folder), val_ratio=val_ratio)
         splitter.get_samplepairs()
@@ -95,14 +95,12 @@ class UNetTrainer2:
                                     patch_size=self.input_size, 
                                     subsetting=subsetting, 
                                     filter_threshold=filter_threshold, 
-                                    precision=self.precision,
-                                    logger=self.logger)
+                                    precision=self.precision)
         val_dataset = BacSegmentDataset(val_pairs, 
                                         mode='validation', 
                                         patch_size=self.input_size, 
                                         subsetting=subsetting, 
-                                        precision=self.precision,
-                                        logger=self.logger)
+                                        precision=self.precision)
 
         num_workers = num_workers
         self.batch_size = batch_size
@@ -163,6 +161,7 @@ class UNetTrainer2:
 
         if verbose:
             self.logger.log(f'Total training time: {time.time()-tic:.1f} seconds')
+        return best_loss
 
     def move_to_device(self, data):
         device=self.device
@@ -185,9 +184,6 @@ class UNetTrainer2:
                 tensor_debugger(target, 'target', self.logger)
 
             output = model(data)
-            if self.logger.is_level('DEBUG'):
-                tensor_debugger(output, 'output', self.logger)
-
             loss = criterion(output, target)
             total_loss += loss.item()
 
@@ -199,11 +195,15 @@ class UNetTrainer2:
             inference_times.append(time.time() - tic)
             tic = time.time()
             
+            if self.logger.is_level('DEBUG'):
+                tensor_debugger(output, 'output', self.logger)
 
             if not is_train and batch_idx == log_image_index:
                 self.writer.add_images('images', data, epoch)
                 self.writer.add_images('masks', target, epoch)
                 self.writer.add_images('predictions', output, epoch)
+        
+        empty_gpu_cache(self.device)
 
         return total_loss / len(loader), np.mean(inference_times)
 

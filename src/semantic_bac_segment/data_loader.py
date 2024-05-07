@@ -19,17 +19,17 @@ import os
 import numpy as np
 import glob
 class TrainSplit:
-    def __init__(self, image_path, mask_path, val_ratio=0.1):
+    def __init__(self, image_path, mask_path, filetype='.tiff', val_ratio=0.1):
         self.image_path = image_path
         self.mask_path = mask_path
         self.val_ratio = val_ratio
-        
+        self.filetype = filetype
     def get_samplepairs(self):
         assert os.path.exists(self.image_path), "Image directory does not exist"
         assert os.path.exists(self.mask_path), "Mask directory does not exist"
 
-        image_files = sorted(glob.glob(os.path.join(self.image_path, '*')))
-        mask_files = sorted(glob.glob(os.path.join(self.mask_path, '*')))
+        image_files = sorted(glob.glob(os.path.join(self.image_path, '*'+ self.filetype)))
+        mask_files = sorted(glob.glob(os.path.join(self.mask_path, '*'+ self.filetype)))
 
         assert len(image_files) == len(mask_files), "Number of images and masks do not match"
         self.image_mask_pairs = list(zip(image_files, mask_files))
@@ -100,11 +100,16 @@ class BacSegmentDataset(Dataset):
             prepare_mask = ImageAdapter(aug_mask, self.patch_size, self.overlap_ratio)
             img_patches = prepare_img.create_patches()
             mask_patches = prepare_mask.create_patches()
+            print(f'shape mask before thr: {mask_patches.shape}')
+            print(f'shape img before thr: {img_patches.shape}')
 
             if self.filter_threshold:
                 high_prop_mask = self.filter_samples(mask_patches, self.filter_threshold)
                 img_patches = img_patches[high_prop_mask]
                 mask_patches = mask_patches[high_prop_mask]
+            print(f'shape mask after thr: {mask_patches.shape}')
+            print(f'shape img after thr: {img_patches.shape}')
+
 
             if self.subsetting:
                 if self.subsetting > img_patches.shape[0]:
@@ -145,33 +150,10 @@ class BacSegmentDataset(Dataset):
         return len(self.image_pairs)
 
 
-#def collate_fn(batch):
-#    # Unzip the batch
-#    images, masks = zip(*batch)
-#    
-#    # Stack the images and masks along a new dimension
-#    images = torch.stack(images, dim=0)
-#    masks = torch.stack(masks, dim=0)
-#
-#    # Get the number of crops and the batch size
-#    num_crops = images.shape[1]
-#    batch_size = images.shape[0]
-#    
-#    # Calculate total number of samples
-#    total_samples = num_crops * batch_size
-#    
-#    # Reshape the images and masks to combine crops with the total number of samples
-#    images = images.view(total_samples, 1, images.shape[-2], images.shape[-1])
-#    masks = masks.view(total_samples, 1, masks.shape[-2], masks.shape[-1])
-#
-#    return images, masks
-
-from semantic_bac_segment.utils import tensor_debugger
 def collate_fn(batch):
     # Unzip the batch
     images, masks = zip(*batch)
-
-
+    
     # Stack the images and masks along a new dimension
     images = torch.stack(images, dim=0)
     masks = torch.stack(masks, dim=0)
@@ -183,24 +165,8 @@ def collate_fn(batch):
     # Calculate total number of samples
     total_samples = num_crops * batch_size
     
-    # Determine the number of dimensions (2D or 3D)
-    num_dims_images = images.ndim - 2
-    num_dims_masks = masks.ndim - 2
-    
     # Reshape the images and masks to combine crops with the total number of samples
-    if num_dims_images == 2 and num_dims_masks == 2:
-        images = images.view(total_samples, images.shape[-3], images.shape[-2], images.shape[-1])
-        masks = masks.view(total_samples, 1, masks.shape[-2], masks.shape[-1])
-    elif num_dims_images == 2 and num_dims_masks == 3:
-        images = images.view(total_samples, 1, images.shape[-2], images.shape[-1])
-        masks = masks.view(total_samples, masks.shape[-3], masks.shape[-2], masks.shape[-1])
-    elif num_dims_images == 3 and num_dims_masks == 2:
-        images = images.view(total_samples, images.shape[-3], images.shape[-2], images.shape[-1])
-        masks = masks.view(total_samples, 1, masks.shape[-2], masks.shape[-1])
-    elif num_dims_images == 3 and num_dims_masks == 3:
-        images = images.view(total_samples, images.shape[-3], images.shape[-2], images.shape[-1])
-        masks = masks.view(total_samples, masks.shape[-3], masks.shape[-2], masks.shape[-1])
-    else:
-        raise ValueError("Unsupported combination of image and mask dimensions.")
+    images = images.view(total_samples, 1, images.shape[-2], images.shape[-1])
+    masks = masks.view(total_samples, 1, masks.shape[-2], masks.shape[-1])
 
     return images, masks
