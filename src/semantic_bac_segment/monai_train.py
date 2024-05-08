@@ -17,13 +17,13 @@ from monai.transforms import (Compose,
                               ToTensord
                               )
 from monai.data import DataLoader, Dataset, PatchDataset
-from monai.losses import DiceLoss
+from monai.losses import DiceLoss as monai_dice
 from monai.metrics import DiceMetric, compute_iou
 from monai.networks.nets import UNet as MonaiUnet
 from semantic_bac_segment.utils import get_device, tensor_debugger
 from semantic_bac_segment.data_loader import TrainSplit
 from semantic_bac_segment.monai_trainer import MonaiTrainer
-from semantic_bac_segment.loss_functions import MultiClassDiceLoss, MultiClassWeightedBinaryCrossEntropy
+from semantic_bac_segment.loss_functions import DiceLoss, WeightedBinaryCrossEntropy, MultiClassDiceLoss, MultiClassWeightedBinaryCrossEntropy
 from semantic_bac_segment.monay_utils import (TIFFLoader, 
                                               BacSegmentDatasetCreator, 
                                               ClearBackgroundTransform,
@@ -37,7 +37,7 @@ from semantic_bac_segment.model_loader import model_loader
 # Full image transform (read and remove background)
 img_transforms = Compose([
     TIFFLoader(keys=["image"]),
-    TIFFLoader(keys=["label"], add_channel_dim=False), # If running on 2D images, change to True
+    TIFFLoader(keys=["label"], add_channel_dim=True), # If running on 2D images, change to True
     ClearBackgroundTransform(keys=["image"], sigma_r=151, method='divide', convert_32=True)
 ])
 
@@ -66,22 +66,28 @@ patch_val_trans = Compose([
 
 # Get datasets
 source_folder='./data/source/'
-mask_folder='./data/multiclass_masks/'
+mask_folder='./data/masks_cleaned/'
+#mask_folder='./data/multiclass_masks/'
+# mask_folder='./data/multiclass_masks3class/'
+
 val_ratio = 0.3
-num_samples = 2
+num_samples = 60
 dataset_creator = BacSegmentDatasetCreator(source_folder, mask_folder, val_ratio)
 train_dataset, val_dataset= dataset_creator.create_datasets(img_transforms , img_transforms)
 train_patch_dataset, val_patch_dataset = dataset_creator.create_patches(num_samples=num_samples, 
-                                                                        roi_size=(256,256), 
+                                                                        roi_size=(256, 256), 
                                                                         train_transforms=patch_train_trans, 
                                                                         val_transforms=patch_val_trans)
 
 # Get loss and metrics
-loss_function = MultiClassDiceLoss(is_sigmoid=True)
+#loss_function = MultiClassDiceLoss(is_sigmoid=True)
+loss_function = DiceLoss(is_sigmoid=True)
 metrics = {
-    'Dice': MultiClassDiceLoss(is_sigmoid=True),
-    'Monai_diceloss' : DiceLoss(to_onehot_y=False, sigmoid=False),
-    'CrossEntropy': MultiClassWeightedBinaryCrossEntropy(is_sigmoid=True, class_weights=[1, 1, 1, 1]),
+    'Dice' : DiceLoss(is_sigmoid=True),
+ #   'Dice': MultiClassDiceLoss(is_sigmoid=True),
+    'Monai_diceloss' : monai_dice(to_onehot_y=False, sigmoid=False),
+ #   'CrossEntropy': MultiClassWeightedBinaryCrossEntropy(is_sigmoid=True, class_weights=[1, 1, 1, 1]),
+    'CrossEntropy' : WeightedBinaryCrossEntropy(),
     'Cross_entropy_pytorch' : CrossEntropyLoss()
 }
 
@@ -89,7 +95,7 @@ device=get_device()
 debugging=True
 
 # Get list of architechtures and run Training loop
-num_epochs = 2
+num_epochs = 25
 
 with open('/Users/santiago/switchdrive/boeck_lab_projects/Semantic_bac_segment/train_models.json') as file:
     network_arch=json.load(file)
@@ -102,7 +108,8 @@ for model_i in network_arch:
         optimizer = torch.optim.Adam(m.parameters(), lr=0.005)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 
-        trainer=MonaiTrainer(m, train_patch_dataset, val_patch_dataset, optimizer, scheduler, device, sigmoid_transform=True, debugging=True)
+        trainer=MonaiTrainer(m, train_patch_dataset, val_patch_dataset, optimizer, scheduler, device, sigmoid_transform=True, debugging=False)
+        trainer.logger.log(f'Training on {device} for {num_epochs} epochs', level='INFO')
         trainer.train(loss_function, metrics, num_epochs, './results', model_i['model_name'], model_i['model_args'])
 
     except Exception as e:

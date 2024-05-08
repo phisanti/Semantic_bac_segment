@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from semantic_bac_segment.utils import tensor_debugger
 
 
 class DiceLoss(nn.Module):
@@ -114,6 +115,7 @@ class MultiClassDiceLoss(nn.Module):
         # Compute the Dice loss for each class
         dice_scores = []
         num_channels = inputs.shape[1]
+
         for channel in range(num_channels):
             input_channel = inputs[:, channel, :, :]
             target_channel = targets[:, channel, :, :]
@@ -130,7 +132,6 @@ class MultiClassDiceLoss(nn.Module):
 
         # Calculate the weighted sum of the Dice scores
         dice_scores = [score * weight for score, weight in zip(dice_scores, self.weight)]
-
         dice_loss = 1 - sum(dice_scores) / num_channels
 
         if self.size_average:
@@ -170,7 +171,6 @@ class WeightedBinaryCrossEntropy(nn.Module):
         
         return weighted_bce_loss
 
-from semantic_bac_segment.utils import tensor_debugger
 
 class MultiClassWeightedBinaryCrossEntropy(nn.Module):
     def __init__(self, class_weights=None, is_sigmoid=True):

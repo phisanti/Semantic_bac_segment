@@ -98,13 +98,11 @@ class MonaiTrainer:
 
             with torch.set_grad_enabled(is_train):
                 outputs = self.model(inputs)
-
-
-            if self.debugging:
-                tensor_debugger(outputs, 'outputs', self.logger)
-
                 if self.sigmoid_transform:
                     outputs = torch.sigmoid(outputs)
+                if self.debugging:
+                    tensor_debugger(outputs, 'outputs', self.logger)
+
                 loss = self.loss_function(outputs, labels)
 
 
@@ -114,7 +112,7 @@ class MonaiTrainer:
 
             epoch_loss += loss.item()
             for metric_name, metric_fn in self.metrics.items():
-                epoch_metrics[metric_name] += metric_fn(outputs, labels)
+                epoch_metrics[metric_name] += metric_fn(outputs, labels)/len(dataset)
 
             inference_times.append(time.time() - tic)
             tic = time.time()
