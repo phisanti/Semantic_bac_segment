@@ -2,6 +2,46 @@ import torch
 import torch.nn as nn
 from semantic_bac_segment.utils import tensor_debugger
 
+class MaxDiceLoss(nn.Module):
+    def __init__(self, weight=None, size_average=True, is_sigmoid=True):
+        super(MaxDiceLoss, self).__init__()
+        self.weight = weight
+        self.size_average = size_average
+        self.is_sigmoid = is_sigmoid
+
+    def forward(self, inputs, targets, smooth=1):
+        
+        inputs = inputs.float()
+        targets = targets.float()
+        
+        #comment out if your model contains a sigmoid or equivalent activation layer
+        if self.is_sigmoid:
+            pass
+        else:
+            inputs = torch.sigmoid(inputs)
+        # Flatten all channels into one with the maximum value of each channel
+        inputs = torch.max(inputs, dim=1, keepdim=True)[0]
+        targets = torch.max(targets, dim=1, keepdim=True)[0]
+        tensor_debugger(inputs, 'inputs-in-loss')
+        tensor_debugger(targets, 'targets-in-loss')
+        #flatten label and prediction tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+        
+        intersection = (inputs * targets).sum()                            
+        dice = (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)  
+        
+
+        if self.weight is not None:
+            dice = dice * self.weight
+
+        if self.size_average:
+            dice = dice.mean()
+        else:
+            dice = dice.sum()
+        return 1 - dice
+
+
 
 class DiceLoss(nn.Module):
     def __init__(self, weight=None, size_average=True, is_sigmoid=True):
