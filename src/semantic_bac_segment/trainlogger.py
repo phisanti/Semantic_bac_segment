@@ -1,6 +1,6 @@
 import logging
 
-class Logger:
+class TrainLogger:
     def __init__(self, name, file_name='log.txt', level='INFO'):
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level)
