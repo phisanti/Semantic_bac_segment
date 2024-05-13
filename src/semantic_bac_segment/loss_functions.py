@@ -22,8 +22,7 @@ class MaxDiceLoss(nn.Module):
         # Flatten all channels into one with the maximum value of each channel
         inputs = torch.max(inputs, dim=1, keepdim=True)[0]
         targets = torch.max(targets, dim=1, keepdim=True)[0]
-        tensor_debugger(inputs, 'inputs-in-loss')
-        tensor_debugger(targets, 'targets-in-loss')
+
         #flatten label and prediction tensors
         inputs = inputs.view(-1)
         targets = targets.view(-1)
