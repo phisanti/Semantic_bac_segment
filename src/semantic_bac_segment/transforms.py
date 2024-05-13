@@ -7,8 +7,6 @@ import torch
 import tifffile
 import numpy as np
 from typing import Tuple
-from monai.data import Dataset, PatchDataset, DataLoader
-from monai.transforms import RandSpatialCropSamplesd
 from semantic_bac_segment.data_loader import TrainSplit, collate_fn
 from semantic_bac_segment.utils import tensor_debugger
 
@@ -32,7 +30,7 @@ class ComposeInspect(object):
 
 
 class TIFFLoader(object):
-    def __init__(self, keys=("image", "label"), add_channel_dim=True):
+    def __init__(self, keys=("image", "label"), add_channel_dim='auto'):
         self.keys = keys
         self.add_channel_dim = add_channel_dim
 
@@ -40,9 +38,13 @@ class TIFFLoader(object):
         for key in self.keys:
             if isinstance(data[key], str):
                 data[key] = tifffile.imread(data[key])
-                if self.add_channel_dim:
                 # Add an extra channel dimension
+                if self.add_channel_dim == 'auto' and data[key].ndim == 2:
                     data[key] = np.expand_dims(data[key], axis=0)
+                elif self.add_channel_dim:
+                    data[key] = np.expand_dims(data[key], axis=0)
+                else:
+                    pass
 
             elif isinstance(data[key], np.ndarray):
                 # The data is already an array, so no need to load it
@@ -184,66 +186,3 @@ class Ensure4D(object):
             data[key] = img
 
         return data
-
-
-class BacSegmentDatasetCreator:
-    def __init__(self, 
-                 source_folder: str, 
-                 mask_folder: str, 
-                 val_ratio: float = 0.3
-
-                 ):
-        self.source_folder = source_folder
-        self.mask_folder = mask_folder
-        self.val_ratio = val_ratio
-
-    def create_datasets(self, train_transform, val_transform) -> Tuple[PatchDataset, PatchDataset]:
-        splitter = TrainSplit(self.source_folder, self.mask_folder, val_ratio=self.val_ratio)
-        splitter.get_samplepairs()
-        train_pairs, val_pairs = splitter.split_samples()
-
-        train_data = [{"image": image, "label": label} for image, label in train_pairs]
-        val_data = [{"image": image, "label": label} for image, label in val_pairs]
-
-        self.train_dataset = Dataset(data=train_data, transform=train_transform)
-        self.val_dataset = Dataset(data=val_data, transform=val_transform)
-
-        return self.train_dataset, self.val_dataset
-
-    def create_patches(self, 
-                 roi_size: Tuple[int, int] = (256, 256), 
-                 num_samples: int = 20,
-                 train_transforms=None,
-                 val_transforms=None):
-        
-        patch_func = RandSpatialCropSamplesd(
-            keys=["image", "label"],
-            roi_size=roi_size,
-            num_samples=num_samples,
-            random_size=False,
-        )
-
-        train_patch_dataset = PatchDataset(
-            data=self.train_dataset,
-            patch_func=patch_func,
-            samples_per_image=num_samples, 
-            transform=train_transforms,
-
-        )
-
-        val_patch_dataset = PatchDataset(
-            data=self.val_dataset,
-            patch_func=patch_func,
-            samples_per_image=num_samples,
-            transform=val_transforms,
-
-        )
-        
-        train_ds = DataLoader(train_patch_dataset, 
-                              batch_size=num_samples)
-
-        val_ds = DataLoader(val_patch_dataset,
-                            batch_size=num_samples)
-
-
-        return train_ds, val_ds

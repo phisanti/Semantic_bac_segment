@@ -2,22 +2,14 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 
-
-import numpy as np
-import tifffile
-import glob
-from semantic_bac_segment.utils import normalize_percentile, normalize_min_max
-from semantic_bac_segment.image_augment import ImageAugmenter
-from semantic_bac_segment.pre_processing import ImageAdapter
 import torch
-from torch.utils.data.dataset import Dataset
-import os
-import tifffile
-import random
-
-import os
 import numpy as np
 import glob
+from typing import Tuple
+from torch.utils.data.dataset import Dataset
+from monai.data import Dataset, PatchDataset, DataLoader
+from monai.transforms import RandSpatialCropSamplesd
+
 class TrainSplit:
     def __init__(self, image_path, mask_path, filetype='.tiff', val_ratio=0.1):
         self.image_path = image_path
@@ -59,92 +51,67 @@ class TrainSplit:
 
         return train_dicts, valid_dicts
 
-class BacSegmentDataset(Dataset):
+class BacSegmentDatasetCreator:
     def __init__(self, 
-                 image_pairs, 
-                 in_channels=1, 
-                 out_channels=1, 
-                 mode='train', 
-                 patch_size=512, 
-                 overlap_ratio=0.0, 
-                 subsetting=0, 
-                 filter_threshold=None,
-                 precision='half'):
-                
-        self.image_pairs=image_pairs
-        self.patch_size = patch_size
-        self.in_channels = in_channels
-        self.out_channels= out_channels 
-        self.mode = mode
-        self.filter_threshold = filter_threshold
-        self.overlap_ratio = overlap_ratio
-        self.precision = precision
+                 source_folder: str, 
+                 mask_folder: str, 
+                 val_ratio: float = 0.3
 
-        if isinstance(subsetting, int):
-            self.subsetting = subsetting
-        elif isinstance(subsetting, float) and 0 < subsetting < 1:
-            self.subsetting = int(len(self.image_pairs) * subsetting)
-        else:
-            raise ValueError("Invalid value for subsetting. It should be an integer or a fraction between 0 and 1.")
+                 ):
+        self.source_folder = source_folder
+        self.mask_folder = mask_folder
+        self.val_ratio = val_ratio
 
-    def __getitem__(self, index):
-        img_path, mask_path = self.image_pairs[index]
-        img = tifffile.imread(img_path)
-        mask = tifffile.imread(mask_path)
+    def create_datasets(self, train_transform, val_transform) -> Tuple[PatchDataset, PatchDataset]:
+        splitter = TrainSplit(self.source_folder, self.mask_folder, val_ratio=self.val_ratio)
+        splitter.get_samplepairs()
+        train_pairs, val_pairs = splitter.split_samples()
 
-        if self.mode == 'train':
-            augmenter = ImageAugmenter(seed=None)
-            aug_img, aug_mask = augmenter.transform(img, mask)
+        train_data = [{"image": image, "label": label} for image, label in train_pairs]
+        val_data = [{"image": image, "label": label} for image, label in val_pairs]
 
-            prepare_img = ImageAdapter(aug_img, self.patch_size, self.overlap_ratio)
-            prepare_mask = ImageAdapter(aug_mask, self.patch_size, self.overlap_ratio)
-            img_patches = prepare_img.create_patches()
-            mask_patches = prepare_mask.create_patches()
+        self.train_dataset = Dataset(data=train_data, transform=train_transform)
+        self.val_dataset = Dataset(data=val_data, transform=val_transform)
 
-            if self.filter_threshold:
-                high_prop_mask = self.filter_samples(mask_patches, self.filter_threshold)
-                img_patches = img_patches[high_prop_mask]
-                mask_patches = mask_patches[high_prop_mask]
+        return self.train_dataset, self.val_dataset
 
-
-            if self.subsetting:
-                if self.subsetting > img_patches.shape[0]:
-                    subset_size = img_patches.shape[0]
-                else:
-                    subset_size = self.subsetting
-                random_subset = np.random.choice(img_patches.shape[0], size=subset_size, replace=False)
-                img_patches = img_patches[random_subset]
-                mask_patches = mask_patches[random_subset]
-
-        else:
-            prepare_img = ImageAdapter(img, self.patch_size, self.overlap_ratio)
-            prepare_mask = ImageAdapter(mask, self.patch_size, self.overlap_ratio)
-            img_patches = prepare_img.create_patches()
-            mask_patches = prepare_mask.create_patches()
-
-
-        normalized_images = np.empty_like(img_patches, dtype=np.float32)
-        normalized_masks = np.empty_like(mask_patches, dtype=np.float32)
-
-        for i in range(img_patches.shape[0]):
-            normalized_images[i] = normalize_percentile(img_patches[i])
-            normalized_masks[i] = normalize_min_max(mask_patches[i])
-
-        # convert to tensors
-        torch_img = torch.from_numpy(normalized_images).float()
-        torch_mask = torch.from_numpy(normalized_masks).float()
-                
-        return torch_img, torch_mask
-
-    def filter_samples(self, mask_patches, threshold):
-        # Filter out samples with no bacteria
+    def create_patches(self, 
+                 roi_size: Tuple[int, int] = (256, 256), 
+                 num_samples: int = 20,
+                 train_transforms=None,
+                 val_transforms=None):
         
-        high_prop_mask=np.where(np.mean(mask_patches, axis=(1,2)) > threshold)[0]
-        return high_prop_mask
-    
-    def __len__(self):
-        return len(self.image_pairs)
+        patch_func = RandSpatialCropSamplesd(
+            keys=["image", "label"],
+            roi_size=roi_size,
+            num_samples=num_samples,
+            random_size=False,
+        )
 
+        train_patch_dataset = PatchDataset(
+            data=self.train_dataset,
+            patch_func=patch_func,
+            samples_per_image=num_samples, 
+            transform=train_transforms,
+
+        )
+
+        val_patch_dataset = PatchDataset(
+            data=self.val_dataset,
+            patch_func=patch_func,
+            samples_per_image=num_samples,
+            transform=val_transforms,
+
+        )
+        
+        train_ds = DataLoader(train_patch_dataset, 
+                              batch_size=num_samples)
+
+        val_ds = DataLoader(val_patch_dataset,
+                            batch_size=num_samples)
+
+
+        return train_ds, val_ds
 
 def collate_fn(batch):
     # Unzip the batch

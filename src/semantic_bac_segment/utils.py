@@ -1,12 +1,6 @@
 import numpy as np
 import itertools
-import yaml
 import torch
-
-def read_cofig(yaml_file):
-    with open(yaml_file, 'r') as file:
-        config = yaml.safe_load(file)
-    return config
 
 def adjust_dimensions(img, dim_order):
     target_order = 'TSCXY'

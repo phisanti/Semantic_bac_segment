@@ -20,9 +20,10 @@ class TrainLogger:
         ch.setFormatter(formatter)
         fh.setFormatter(formatter)
 
-        # Add ch and fh to logger
-        self.logger.addHandler(ch)
-        self.logger.addHandler(fh)
+            # Add ch and fh to logger
+        if not self.logger.handlers:
+            self.logger.addHandler(ch)
+            self.logger.addHandler(fh)
 
     def log(self, message, level='INFO'):
         self._check_level(level)

@@ -7,12 +7,12 @@ from torch.utils.tensorboard import SummaryWriter
 from semantic_bac_segment.loss_functions import DiceLoss
 from monai.metrics import DiceMetric
 from semantic_bac_segment.utils import tensor_debugger, empty_gpu_cache
-from semantic_bac_segment.trainlogger import Logger
+from semantic_bac_segment.trainlogger import TrainLogger
 from tqdm.auto import tqdm
 
 
 class MonaiTrainer:
-    def __init__(self, model, train_dataset, val_dataset, optimizer, scheduler, device, sigmoid_transform,  logger=Logger('MonaiTrainer', level='INFO')):
+    def __init__(self, model, train_dataset, val_dataset, optimizer, scheduler, device, sigmoid_transform,  logger=TrainLogger('MonaiTrainer', level='INFO'), debugging=False):
         self.model = model
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
@@ -20,8 +20,7 @@ class MonaiTrainer:
         self.scheduler = scheduler
         self.device = device
         self.debugging = debugging
-        log_level = 'DEBUG' if self.debugging else 'INFO'
-        self.logger = Logger('MonaiTrainer', level=log_level)
+        self.logger = logger
         self.check_early_stop=False
         self.stop_training=False
         self.sigmoid_transform= sigmoid_transform

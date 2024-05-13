@@ -1,109 +1,120 @@
-import sys
 import os
+import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
-from semantic_bac_segment.train import UNetTrainer2
-from semantic_bac_segment.models.pytorch_attention import AttentionUNet as AttentionUNet
-from semantic_bac_segment.models.pytorch_altmodel import UNET as UNet2, DualPathwayUNet, UNET_edges
-from semantic_bac_segment.models.pytorch_bilinealup import UNET_bilineal as UNET_bilineal
-from semantic_bac_segment.models.pytorch_hed import HEDUNet
-from semantic_bac_segment.models.pytorch_unetplusinv import double_UNET
-from semantic_bac_segment.models.pytorch_cnnunet import Unet, SegResNet, dilnet, Unet_dynamic
-
-from monai.networks.nets import unet
-#from semantic_bac_segment.loss_functions import DiceLoss, MultiClassDiceLoss, WeightedBinaryCrossEntropy, weightedDiceLoss, MultiChannelWeightedBinaryCrossEntropy
-from semantic_bac_segment.data_loader import collate_fn
-from semantic_bac_segment.utils import read_cofig
-#from monai.losses import DiceLoss
-from semantic_bac_segment.loss_functions import DiceLoss
-
-
-configurations = [
-    {
-        'id': 'unet_16_2_2_2_3',
-        'model': Unet(nb_filters=16, layers=[2, 2, 2, 3]),
-        'nb_filters': 16,
-        'layers': [2, 2, 2, 3],
-    },
-        {
-        'id': 'unet_16_2_2_2_3_dil',
-        'model': Unet(nb_filters=16, layers=[2, 2, 2, 3], with_dilation=True),
-        'nb_filters': 16,
-        'layers': [2, 2, 2, 3],
-    },
-    {
-        'id': 'unet2_16_32_64_128',
-        'model': UNet2(features=[16, 32, 64, 128]),
-        'features': [16, 32, 64, 128],
-    },
-    {
-        'id': 'unet2_32_64_128_256',
-        'model': UNet2(features=[32, 64, 128, 256]),
-        'features': [32, 64, 128, 256],
-    },
-    {
-        'id': 'unet_16_1_2_2_3',
-        'model': Unet(nb_filters=16, layers=[1, 2, 2, 3]),
-        'nb_filters': 16,
-        'layers': [1, 2, 2, 3],
-    },
-    {
-        'id': 'unet_32_1_2_2_3',
-        'model': Unet(nb_filters=32, layers=[1, 2, 2, 3]),
-        'nb_filters': 32,
-        'layers': [1, 2, 2, 3],
-    },
-        {
-        'id': 'unet_32_1_2_2_3_dil',
-        'model': Unet(nb_filters=32, layers=[1, 2, 2, 3], with_dilation=True),
-        'nb_filters': 32,
-        'layers': [1, 2, 2, 3],
-    },
-    {
-        'id': 'unet2_64_128_256',
-        'model': UNet2(features=[64, 128, 256]),
-        'features': [64, 128, 256],
-    },
-    {
-        'id': 'unet_64_2_2_2_3',
-        'model': Unet(nb_filters=64, layers=[2, 2, 2, 3]),
-        'nb_filters': 64,
-        'layers': [2, 2, 2, 3],
-    },
-    {
-        'id': 'unet_32_2_2_2_3',
-        'model': Unet(nb_filters=32, layers=[2, 2, 2, 3]),
-        'nb_filters': 32,
-        'layers': [2, 2, 2, 3],
-    },
-]
+import traceback
+import json
+import torch
+from torch.nn import CrossEntropyLoss
+from monai.transforms import (Compose, 
+                              RandRotate90d, 
+                              Rand2DElasticd, 
+                              RandGaussianNoised,
+                              RandGaussianSmoothd,
+                              ScaleIntensityd,
+                              RandZoomd,
+                              ToTensord
+                              )
+from monai.losses import DiceLoss as monai_dice
+from monai.metrics import DiceMetric, compute_iou
+from semantic_bac_segment.trainlogger import TrainLogger
+from semantic_bac_segment.confreader import ConfReader
+from semantic_bac_segment.utils import get_device, tensor_debugger
+from semantic_bac_segment.data_loader import BacSegmentDatasetCreator
+from semantic_bac_segment.trainer import MonaiTrainer
+from semantic_bac_segment.loss_functions import (DiceLoss, 
+                                                 WeightedBinaryCrossEntropy, 
+                                                 MultiClassDiceLoss, 
+                                                 MultiClassWeightedBinaryCrossEntropy, 
+                                                 MaxDiceLoss)
+from semantic_bac_segment.transforms import (TIFFLoader, 
+                                              ClearBackgroundTransform,
+                                              NormalizePercentileTransform,
+                                              Ensure4D,
+                                              ComposeInspect)
+from semantic_bac_segment.model_loader import model_loader
 
 
-if __name__ == '__main__':
-    
-    
-    # Get config settings
-    train_settings=read_cofig('./train_config.yaml')
-    # Init trainer with data and model
-    train_settings['optimizer_params']['model_name']='unet2_64-256-channel0'
-    trainer = UNetTrainer2(**train_settings['trainer_params'], metadata=train_settings, log_level='INFO')
-    trainer.add_model(UNet2(features=[16, 32, 64, 128]), **train_settings['model_params'])
-    trainer.read_data(**train_settings['data_params'], collate_fn=collate_fn)
+# Read configs
+c_reader=ConfReader('./train_configs.yaml')
+configs=c_reader.opt
 
-    # Train the model
-    criterion = DiceLoss(is_sigmoid=True)
-    best_loss_i=trainer.train(**train_settings['optimizer_params'], criterion=criterion)
+# Full image transform (read and remove background)
+img_transforms = Compose([
+    TIFFLoader(keys=["image"]),
+    TIFFLoader(keys=["label"], add_channel_dim=configs.trainer_params['multiclass']), # If running on 2D images, change to True
+    ClearBackgroundTransform(keys=["image"], sigma_r=25, method='divide', convert_32=True)
+])
 
-"""
-    for config in configurations:
-        print(f'Training {config["id"]}')
-        # Init trainer with data and model
-        trainer = UNetTrainer2(**train_settings['trainer_params'], metadata=train_settings, log_level='INFO')
-        trainer.add_model(config['model'], **train_settings['model_params'])
-        trainer.read_data(**train_settings['data_params'], collate_fn=collate_fn)
 
-        # Train the model
-        criterion = DiceLoss(is_sigmoid=True)
-        best_loss_i=trainer.train(**train_settings['optimizer_params'], criterion=criterion)
-        print(f'Best loss for {config["id"]}: {best_loss_i}')
+# Patch transfroms
+patch_train_trans = Compose([
+    RandZoomd(keys=["image", "label"], prob=0.5, min_zoom=0.8, max_zoom=1.2),
+    RandRotate90d(keys=["image", "label"], prob=0.5, max_k=3),
+    #RandGaussianNoised(keys=["image"], prob=0.5, mean=0.0, std=0.1),
+    RandGaussianSmoothd(keys=["image"], prob=0.5, sigma_x=(0.1, 1.1), sigma_y=(0.1, 1.1)),
+    NormalizePercentileTransform(keys=["image"], pmax=95),
+    ScaleIntensityd(keys=["label"]),
+    #Ensure4D(keys=["image", "label"]),
+    ToTensord(keys=["image", "label"])
+])
+patch_val_trans = Compose([
+    NormalizePercentileTransform(keys=["image"], pmax=95),
+    ScaleIntensityd(keys=["label"]),
+    #Ensure4D(keys=["image", "label"]),
+    ToTensord(keys=["image", "label"])
 
-"""
+])
+
+
+# Get datasets
+dataset_creator = BacSegmentDatasetCreator(configs.dataset_params['source_dir'], 
+                                           configs.dataset_params['masks_dir'], 
+                                           configs.dataset_params['val_ratio'])
+train_dataset, val_dataset= dataset_creator.create_datasets(img_transforms , img_transforms)
+train_patch_dataset, val_patch_dataset = dataset_creator.create_patches(num_samples=configs.dataset_params['n_patches'], 
+                                                                        roi_size=(256, 256), 
+                                                                        train_transforms=patch_train_trans, 
+                                                                        val_transforms=patch_val_trans)
+
+# Get loss and metrics
+loss_function = MaxDiceLoss(is_sigmoid=True)
+metrics = {
+    'Dice': MultiClassDiceLoss(is_sigmoid=True),
+    'Monai_diceloss' : monai_dice(to_onehot_y=False, sigmoid=False, ),
+    'CrossEntropy': MultiClassWeightedBinaryCrossEntropy(is_sigmoid=True, class_weights=[.2, .5, 3]),
+    'Cross_entropy_pytorch' : CrossEntropyLoss()
+}
+
+device=get_device()
+debugging=True
+
+
+log_level = 'DEBUG' if debugging else 'INFO'
+trainlogger = TrainLogger('MonaiTrainer', level=log_level)
+
+# Get list of architectures and run Training loop
+num_epochs = configs.trainer_params['num_epochs']
+with open(configs.trainer_params['model_settings']) as file:
+    network_arch = json.load(file)
+counter = 0
+
+c_reader.pretty_print(configs)
+for model_i in network_arch:
+    if counter > 2:
+        try:
+            m = model_loader(model_i, device)
+            torch.compile(m)
+            optimizer = torch.optim.Adam(m.parameters(), lr=configs.optimizer_params['learning_rate'])
+            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 
+                                                        step_size=configs.optimizer_params['step_size'], 
+                                                        gamma=configs.optimizer_params['gamma'])
+
+            trainer = MonaiTrainer(m, train_patch_dataset, val_patch_dataset, optimizer, scheduler, device, sigmoid_transform=True, logger=trainlogger, debugging=configs.trainer_params['debugging'])
+            trainer.logger.log(f'Training on {device} for {num_epochs} epochs', level='INFO')
+            trainer.train(loss_function, metrics, num_epochs, './results', model_i['model_name'], model_i['model_args'])
+
+        except Exception as e:
+            error_message = f"An error occurred while training model {model_i['model_name']}: {str(e)}\n"
+            error_message += f"Traceback: {traceback.format_exc()}\n"
+            trainer.trainlogger.log(error_message, level='ERROR')  # Use the logger instance directly
+    counter += 1
