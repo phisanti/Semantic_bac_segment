@@ -3,12 +3,12 @@ import torch.nn as nn
 from semantic_bac_segment.utils import tensor_debugger
 
 class MaxDiceLoss(nn.Module):
-    def __init__(self, weight=None, size_average=True, is_sigmoid=True):
+    def __init__(self, weight=None, size_average=True, is_sigmoid=True, include_background=True):
         super(MaxDiceLoss, self).__init__()
         self.weight = weight
         self.size_average = size_average
         self.is_sigmoid = is_sigmoid
-
+        self.include_background=include_background
     def forward(self, inputs, targets, smooth=1):
         
         inputs = inputs.float()
@@ -19,6 +19,12 @@ class MaxDiceLoss(nn.Module):
             pass
         else:
             inputs = torch.sigmoid(inputs)
+
+        if not self.include_background:
+            # remove background from masks
+            inputs = inputs[:, 1:]
+            targets = targets[:, 1:]
+        
         # Flatten all channels into one with the maximum value of each channel
         inputs = torch.max(inputs, dim=1, keepdim=True)[0]
         targets = torch.max(targets, dim=1, keepdim=True)[0]
@@ -182,9 +188,9 @@ class MultiClassDiceLoss(nn.Module):
 
 
 class WeightedBinaryCrossEntropy(nn.Module):
-    def __init__(self, class_weights = [0.8, 1.2], is_sigmoid=True):
+    def __init__(self, weight = [0.8, 1.2], is_sigmoid=True):
         super(WeightedBinaryCrossEntropy, self).__init__()
-        self.register_buffer('class_weights', torch.tensor(class_weights))
+        self.register_buffer('class_weights', torch.tensor(weight))
         self.is_sigmoid = is_sigmoid
 
     def forward(self, output, target):
@@ -202,7 +208,7 @@ class WeightedBinaryCrossEntropy(nn.Module):
         bce_loss = nn.functional.binary_cross_entropy(output, target, reduction='none')
         
         # Apply class weights to the loss
-        weight_vector = target * self.class_weights[1] + (1 - target) * self.class_weights[0]
+        weight_vector = target * self.weight[1] + (1 - target) * self.weight[0]
         weighted_bce_loss = weight_vector * bce_loss
         
         # Take the mean of the weighted loss
@@ -212,18 +218,18 @@ class WeightedBinaryCrossEntropy(nn.Module):
 
 
 class MultiClassWeightedBinaryCrossEntropy(nn.Module):
-    def __init__(self, class_weights=None, is_sigmoid=True):
+    def __init__(self, weight=None, is_sigmoid=True):
         super(MultiClassWeightedBinaryCrossEntropy, self).__init__()
         self.is_sigmoid = is_sigmoid
-        self.class_weights = class_weights
+        self.weight = weight
 
     def forward(self, output, target):
 
         num_channels = output.shape[1]
-        if self.class_weights is None:
-            self.class_weights = [1.0] * num_channels  # Default to equal weight for single-channel input
+        if self.weight is None:
+            self.weight = [1.0] * num_channels  # Default to equal weight for single-channel input
         else:
-            self.class_weights = self.class_weights
+            self.weight = self.weight
 
 
         # Apply sigmoid activation to the output
@@ -247,7 +253,7 @@ class MultiClassWeightedBinaryCrossEntropy(nn.Module):
             bce_loss = nn.functional.binary_cross_entropy(output_channel, target_channel, reduction='none')
 
             # Apply class weights to the loss for the current channel
-            weight_vector = target_channel * self.class_weights[channel] + (1 - target_channel) * self.class_weights[channel]
+            weight_vector = target_channel * self.weight[channel] + (1 - target_channel) * self.weight[channel]
             weighted_bce_loss = weight_vector * bce_loss
 
             # Take the mean of the weighted loss for the current channel
