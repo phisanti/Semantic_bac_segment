@@ -100,15 +100,11 @@ class BacSegmentDataset(Dataset):
             prepare_mask = ImageAdapter(aug_mask, self.patch_size, self.overlap_ratio)
             img_patches = prepare_img.create_patches()
             mask_patches = prepare_mask.create_patches()
-            print(f'shape mask before thr: {mask_patches.shape}')
-            print(f'shape img before thr: {img_patches.shape}')
 
             if self.filter_threshold:
                 high_prop_mask = self.filter_samples(mask_patches, self.filter_threshold)
                 img_patches = img_patches[high_prop_mask]
                 mask_patches = mask_patches[high_prop_mask]
-            print(f'shape mask after thr: {mask_patches.shape}')
-            print(f'shape img after thr: {img_patches.shape}')
 
 
             if self.subsetting:
