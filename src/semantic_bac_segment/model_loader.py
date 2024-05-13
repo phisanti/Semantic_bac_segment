@@ -1,3 +1,4 @@
+import torch
 from semantic_bac_segment.models.pytorch_cnnunet import Unet as atomai_unet
 from semantic_bac_segment.models.pytorch_altmodel import UNET as base_unet
 from semantic_bac_segment.models.pytorch_attention import AttentionUNet
@@ -12,7 +13,7 @@ from monai.networks.nets import (
     SwinUNETR,
     BasicUNetPlusPlus
 )
-def model_loader(network_architecture, device):
+def model_loader(network_architecture, device, weights=None):
 
     model_name = network_architecture["model_name"]
     model_args = network_architecture["model_args"]
@@ -50,4 +51,7 @@ def model_loader(network_architecture, device):
     else:
         raise ValueError(f"Unknown model family: {model_type}")
     
+    if weights:
+        model.load_state_dict(torch.load(weights, map_location=device))
+
     return model
