@@ -82,8 +82,8 @@ class UNetTrainer2:
             val_ratio (float): The ratio of validation data to split from the training data.
             collate_fn (callable): The function used to collate the samples into batches.
         """
-        self.source_folder='source_norm2/'
-        self.mask_folder='multiclass_masks/channel_0'
+        self.source_folder='source_norm/'
+        self.mask_folder='masks_cleaned/'
         splitter = TrainSplit(os.path.join(self.train_dir, self.source_folder), 
                               os.path.join(self.train_dir, self.mask_folder), val_ratio=val_ratio)
         splitter.get_samplepairs()
