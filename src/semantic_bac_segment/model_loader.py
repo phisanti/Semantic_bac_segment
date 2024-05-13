@@ -1,4 +1,5 @@
 import torch
+from typing import Dict, Optional, Union
 from semantic_bac_segment.models.pytorch_cnnunet import Unet as atomai_unet
 from semantic_bac_segment.models.pytorch_altmodel import UNET as base_unet
 from semantic_bac_segment.models.pytorch_attention import AttentionUNet
@@ -13,8 +14,22 @@ from monai.networks.nets import (
     SwinUNETR,
     BasicUNetPlusPlus
 )
-def model_loader(network_architecture, device, weights=None):
+def model_loader(network_architecture: Dict[str, Union[str, Dict]], device: torch.device, weights: Optional[str] = None) -> torch.nn.Module:
+    """
+    Loads a model based on the provided network architecture and device.
 
+    Args:
+        network_architecture (Dict[str, Union[str, Dict]]): A dictionary containing the model name and model arguments.
+        device (torch.device): The device to load the model onto.
+        weights (Optional[str], optional): Path to the pre-trained weights file. Defaults to None.
+
+    Returns:
+        nn.Module: The loaded model.
+
+    Raises:
+        ValueError: If an unknown model family is specified.
+        AssertionError: If the loaded weights do not match the model architecture.
+    """
     model_name = network_architecture["model_name"]
     model_args = network_architecture["model_args"]
 
