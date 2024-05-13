@@ -22,20 +22,18 @@ class ImageAugmenter:
         self.transfroms = [
             self.flip,
             self.elastic_transform,
-#            self.gaussian_noise,
+            self.gaussian_noise,
             self.change_brightness,
-            self.invert,
             self.no_transformation 
         ]
         self.seed = seed
 
-    def transform(self, img: np.ndarray, mask: np.ndarray, verbose: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+    def transform(self, img: np.ndarray, mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         if self.seed:
             random.seed(self.seed)
         transform = random.choice(self.transfroms)
         self.last_transform = transform.__name__
-        if verbose:
-            print(f'Applying transform: {self.last_transform}')
+
         augmented_images = transform(img, mask)
 
         return augmented_images
@@ -111,7 +109,6 @@ class ImageAugmenter:
         noisy_img = clip_image(noisy_img)
         return noisy_img, mask
 
-
     def invert(self, img: np.ndarray, mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Invert the input image.
@@ -126,7 +123,6 @@ class ImageAugmenter:
         bit_depth = get_bit_depth(img)
         inverted_img = invert_image(img, bit_depth)
         return inverted_img, mask
-
 
     def change_brightness(self, 
                           img: np.ndarray, 
@@ -180,22 +176,18 @@ class ImageAugmenter:
 
         img=map_coordinates(img, indices, order=1).reshape(shape)
         mask=map_coordinates(mask, indices, order=1).reshape(shape)
-        
 
         return img, mask
     
-
     def no_transformation(self, 
                           img: np.ndarray, 
                           mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         return img, mask
 
-
     def edges(self, img, mask, min_n=100, max_n=200):
         edges = cv2.Canny(cv2.convertScaleAbs(mask), min_n, max_n)
 
         return img, edges
-
 
 def clip_image(img: np.ndarray) -> np.ndarray:
     """Clip values in an image to be within valid range.
@@ -322,4 +314,3 @@ def elastic_transform(self,
     indices = np.reshape(y+dy, (-1, 1)), np.reshape(x+dx, (-1, 1))
 
     img=map_coordinates(img, indices, order=1).reshape(shape)
-        
