@@ -12,7 +12,7 @@ from tqdm.auto import tqdm
 
 
 class MonaiTrainer:
-    def __init__(self, model, train_dataset, val_dataset, optimizer, scheduler, device, sigmoid_transform,  debugging=False):
+    def __init__(self, model, train_dataset, val_dataset, optimizer, scheduler, device, sigmoid_transform,  logger=Logger('MonaiTrainer', level='INFO')):
         self.model = model
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
