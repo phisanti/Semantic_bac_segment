@@ -1,9 +1,19 @@
+from typing import Optional
+from logging import Logger
 import numpy as np
-import itertools
 import torch
 
 
-def get_bit_depth(img):
+def get_bit_depth(img: np.ndarray) -> int:
+    """
+    Get the bit depth of an image based on its data type.
+
+    Args:
+        img (numpy.ndarray): Input image.
+
+    Returns:
+        int: Bit depth of the image.
+    """
     dtype_to_bit_depth = {
         "uint8": 8,
         "uint16": 16,
@@ -22,14 +32,30 @@ def get_bit_depth(img):
     return bit_depth
 
 
-def invert_image(img, bit_depth):
+def invert_image(img: np.ndarray, bit_depth: int) -> np.ndarray:
+    """
+    Invert the pixel values of an image based on its bit depth.
+
+    Args:
+        img (numpy.ndarray): Input image.
+        bit_depth (int): Bit depth of the image.
+
+    Returns:
+        numpy.ndarray: Inverted image.
+    """
     bit_depth = bit_depth
     inverted_image = 2**bit_depth - 1 - img
 
     return inverted_image
 
 
-def normalize_percentile(x, pmin=1, pmax=99.8, clip=False, dtype=np.float32):
+def normalize_percentile(
+    x: np.ndarray,
+    pmin: float = 1,
+    pmax: float = 99.8,
+    clip: bool = False,
+    dtype: np.dtype = np.float32,
+) -> np.ndarray:
     """
     Percentile-based image normalization.
 
@@ -57,7 +83,13 @@ def normalize_percentile(x, pmin=1, pmax=99.8, clip=False, dtype=np.float32):
     return x
 
 
-def empty_gpu_cache(device):
+def empty_gpu_cache(device: torch.device) -> None:
+    """
+    Clear the GPU cache.
+
+    Args:
+        device (torch.device): The device to clear the cache for.
+    """
     # Clear the GPU cache
     if device.type == "cuda":
         torch.cuda.empty_cache()
@@ -65,7 +97,7 @@ def empty_gpu_cache(device):
         torch.mps.empty_cache()
 
 
-def get_device():
+def get_device() -> torch.device:
     """
     Detects the available GPU device.
 
@@ -80,7 +112,18 @@ def get_device():
         return torch.device("cpu")
 
 
-def tensor_debugger(tensor, name="tensor", logger=None):
+def tensor_debugger(
+        tensor: torch.Tensor, 
+        name: str = "tensor", 
+        logger: Optional[Logger] = None) -> None:
+    """
+    Print or log debugging information about a tensor.
+
+    Args:
+        tensor (torch.Tensor): The tensor to debug.
+        name (str): The name of the tensor (default: "tensor").
+        logger (logging.Logger, optional): The logger to use for logging (default: None).
+    """
     messages = [
         f"{name} shape: {tensor.shape}",
         f"nans {name} max: {torch.isnan(tensor).any()}",
