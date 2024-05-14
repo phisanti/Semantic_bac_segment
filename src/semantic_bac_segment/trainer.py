@@ -3,6 +3,7 @@ import torch
 import time
 import json
 import numpy as np
+from typing import Dict, List, Tuple, Any, Callable
 from torch.utils.tensorboard import SummaryWriter
 from semantic_bac_segment.loss_functions import DiceLoss
 from monai.metrics import DiceMetric
@@ -12,7 +13,33 @@ from tqdm.auto import tqdm
 
 
 class MonaiTrainer:
-    def __init__(self, model, train_dataset, val_dataset, optimizer, scheduler, device, sigmoid_transform,  logger=TrainLogger('MonaiTrainer', level='INFO'), debugging=False):
+    """
+    A trainer class for training and evaluating models using MONAI framework.
+
+    Args:
+        model (torch.nn.Module): The model to be trained.
+        train_dataset (torch.utils.data.Dataset): The training dataset.
+        val_dataset (torch.utils.data.Dataset): The validation dataset.
+        optimizer (torch.optim.Optimizer): The optimizer for training.
+        scheduler (torch.optim.lr_scheduler._LRScheduler): The learning rate scheduler.
+        device (torch.device): The device to run the training on.
+        sigmoid_transform (bool): Whether to apply sigmoid transformation to the model outputs.
+        logger (TrainLogger, optional): The logger for logging training progress. Defaults to TrainLogger('MonaiTrainer', level='INFO').
+        debugging (bool, optional): Whether to enable debugging mode. Defaults to False.
+    """
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        train_dataset: torch.utils.data.Dataset,
+        val_dataset: torch.utils.data.Dataset,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler._LRScheduler,
+        device: torch.device,
+        sigmoid_transform: bool,
+        logger: TrainLogger = TrainLogger("MonaiTrainer", level="INFO"),
+        debugging: bool = False,
+    ) -> None:
         self.model = model
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
@@ -21,62 +48,113 @@ class MonaiTrainer:
         self.device = device
         self.debugging = debugging
         self.logger = logger
-        self.check_early_stop=False
-        self.stop_training=False
-        self.sigmoid_transform= sigmoid_transform
+        self.check_early_stop = False
+        self.stop_training = False
+        self.sigmoid_transform = sigmoid_transform
 
     def set_early_stop(self, patience=5):
-        self.check_early_stop=True
-        self.patience = patience
-        self.epochs_without_improvement=0
+        """
+        Set the early stopping configuration.
 
-    def train(self, criterion, metrics, num_epochs,saving_folder, model_name, model_args):
+        Args:
+            patience (int, optional): The number of epochs to wait for improvement before stopping. Defaults to 5.
+        """
+
+        self.check_early_stop = True
+        self.patience = patience
+        self.epochs_without_improvement = 0
+
+    def train(
+        self,
+        criterion: torch.nn.Module,
+        metrics: Dict[str, Callable],
+        num_epochs: int,
+        saving_folder: str,
+        model_name: str,
+        model_args: Dict[str, Any],
+    ) -> None:
+        """
+        Train the model.
+
+        Args:
+            criterion (torch.nn.Module): The loss function for training.
+            metrics (Dict[str, Callable]): A dictionary of metric functions.
+            num_epochs (int): The number of epochs to train for.
+            saving_folder (str): The folder to save the trained models and configurations.
+            model_name (str): The name of the model.
+            model_args (Dict[str, Any]): The arguments used to initialize the model.
+        """
         self.saving_folder = saving_folder
         self.metrics = metrics if metrics else []
         self.loss_function = criterion
         best_val_loss = 10000
-        self.logger.log(f'Training model: {model_name}')
-        self.writer = SummaryWriter(comment=f'-{model_name}')
+        self.logger.log(f"Training model: {model_name}")
+        self.writer = SummaryWriter(comment=f"-{model_name}")
 
         for epoch in range(num_epochs):
-            self.logger.log(f'Iteration {epoch}')
-            train_loss, train_metrics, _ = self.run_epoch(self.train_dataset, is_train=True)
+            self.logger.log(f"Iteration {epoch}")
+            train_loss, train_metrics, _ = self.run_epoch(
+                self.train_dataset, is_train=True
+            )
             self.scheduler.step()
 
             val_loss, val_metrics, _ = self.run_epoch(self.val_dataset, is_train=False)
 
-            self.logger.log(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+            self.logger.log(
+                f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
+            )
 
-            self.writer.add_scalar('Train Loss', train_loss, epoch)
-            self.writer.add_scalar('Val Loss', val_loss, epoch)
-            
+            self.writer.add_scalar("Train Loss", train_loss, epoch)
+            self.writer.add_scalar("Val Loss", val_loss, epoch)
+
             for metric_name in self.metrics.keys():
-                self.writer.add_scalar(f'Train {metric_name}', train_metrics[metric_name], epoch)
-                self.writer.add_scalar(f'Val {metric_name}', val_metrics[metric_name], epoch)
+                self.writer.add_scalar(
+                    f"Train {metric_name}", train_metrics[metric_name], epoch
+                )
+                self.writer.add_scalar(
+                    f"Val {metric_name}", val_metrics[metric_name], epoch
+                )
 
             if self.check_early_stop:
-                self.stop_training=self.early_stop(val_loss, best_val_loss)
-            
-            if self.stop_training:
-                self.logger.log(f"Early stopping. Validation loss did not improve for {self.patience} epochs. Model's best loss is:  {best_val_loss:.4f}")
-                break
+                self.stop_training = self.early_stop(val_loss, best_val_loss)
 
+            if self.stop_training:
+                self.logger.log(
+                    f"Early stopping. Validation loss did not improve for {self.patience} epochs. Model's best loss is:  {best_val_loss:.4f}"
+                )
+                break
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 metrics_output = {
-                    metric_name: metric_value.item() for metric_name, metric_value in val_metrics.items()
+                    metric_name: metric_value.item()
+                    for metric_name, metric_value in val_metrics.items()
                 }
                 self.save_model(model_name, model_args, metrics_output, best=True)
-                self.logger.log(f"Saved best model with validation loss: {best_val_loss:.4f}")
+                self.logger.log(
+                    f"Saved best model with validation loss: {best_val_loss:.4f}"
+                )
 
         metrics_output = {
-            metric_name: metric_value.item() for metric_name, metric_value in val_metrics.items()
+            metric_name: metric_value.item()
+            for metric_name, metric_value in val_metrics.items()
         }
         self.save_model(model_name, model_args, metrics_output, best=False)
         self.writer.close()
 
-    def run_epoch(self, dataset, is_train=True):
+    def run_epoch(
+        self, dataset: torch.utils.data.Dataset, is_train: bool = True
+    ) -> Tuple[float, Dict[str, float], float]:
+        """
+        Run a single epoch of training or validation.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to use for the epoch.
+            is_train (bool, optional): Whether it is a training epoch. Defaults to True.
+
+        Returns:
+            Tuple[float, Dict[str, float], float]: A tuple containing the epoch loss, epoch metrics, and inference time.
+        """
 
         epoch_loss = 0
         epoch_dice = 0
@@ -86,24 +164,26 @@ class MonaiTrainer:
         self.model.train() if is_train else self.model.eval()
 
         for batch_data in dataset:
-            inputs, labels = batch_data["image"].to(self.device), batch_data["label"].to(self.device)
+            inputs, labels = (
+                batch_data["image"].to(self.device),
+                batch_data["label"].to(self.device),
+            )
 
             if is_train:
                 self.optimizer.zero_grad()
 
             if self.debugging:
-                tensor_debugger(inputs, 'inputs', self.logger)
-                tensor_debugger(labels, 'labels', self.logger)
+                tensor_debugger(inputs, "inputs", self.logger)
+                tensor_debugger(labels, "labels", self.logger)
 
             with torch.set_grad_enabled(is_train):
                 outputs = self.model(inputs)
                 if self.sigmoid_transform:
                     outputs = torch.sigmoid(outputs)
                 if self.debugging:
-                    tensor_debugger(outputs, 'outputs', self.logger)
+                    tensor_debugger(outputs, "outputs", self.logger)
 
                 loss = self.loss_function(outputs, labels)
-
 
             if is_train:
                 loss.backward()
@@ -111,11 +191,10 @@ class MonaiTrainer:
 
             epoch_loss += loss.item()
             for metric_name, metric_fn in self.metrics.items():
-                epoch_metrics[metric_name] += metric_fn(outputs, labels)/len(dataset)
+                epoch_metrics[metric_name] += metric_fn(outputs, labels) / len(dataset)
 
             inference_times.append(time.time() - tic)
             tic = time.time()
-
 
         epoch_loss /= len(dataset)
         epoch_dice /= len(dataset)
@@ -124,7 +203,17 @@ class MonaiTrainer:
 
         return epoch_loss, epoch_metrics, inference_time
 
-    def early_stop(self, val_loss, best_val_loss):
+    def early_stop(self, val_loss: float, best_val_loss: float) -> bool:
+        """
+        Check if early stopping criteria is met.
+
+        Args:
+            val_loss (float): The validation loss for the current epoch.
+            best_val_loss (float): The best validation loss so far.
+
+        Returns:
+            bool: Whether to stop training early.
+        """
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -133,10 +222,26 @@ class MonaiTrainer:
             self.epochs_without_improvement += 1
             if self.epochs_without_improvement >= self.patience:
                 return True
-            
+
         return False
-    
-    def save_model(self, model_name, model_args, metrics_output, best=False):
+
+    def save_model(
+        self,
+        model_name: str,
+        model_args: Dict[str, Any],
+        metrics_output: Dict[str, float],
+        best: bool = False,
+    ) -> None:
+        """
+        Save the trained model and its configuration.
+
+        Args:
+            model_name (str): The name of the model.
+            model_args (Dict[str, Any]): The arguments used to initialize the model.
+            metrics_output (Dict[str, float]): The output metrics of the model.
+            best (bool, optional): Whether it is the best model so far. Defaults to False.
+        """
+
         # Save the model weights
         model_filename = f"{model_name}_{'best' if best else 'final'}_model.pth"
         model_path = os.path.join(self.saving_folder, model_filename)
@@ -148,7 +253,7 @@ class MonaiTrainer:
         config_data = {
             "model_name": model_name,
             "model_args": model_args,
-            "metrics_output": metrics_output
+            "metrics_output": metrics_output,
         }
         with open(json_path, "w") as json_file:
             json.dump(config_data, json_file, indent=4)
