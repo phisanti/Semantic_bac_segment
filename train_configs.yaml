@@ -13,7 +13,7 @@ trainer_params:
 dataset_params:
   source_dir: './data/source'                   # Location images and masks for training. Two subdirectories are expected: 'source' and 'mask'
   masks_dir: './data/multiclass_masks'    # Location images and masks for training. Two subdirectories are expected: 'source' and 'mask'
-  n_patches: 10                                  # Batch size for training
+  n_patches: 5                                  # Batch size for training
   val_ratio: .2                                 # Validation ratio (percentage of data to use for validation)
 
 # Optimizer parameters (common names, so no explanation needed)

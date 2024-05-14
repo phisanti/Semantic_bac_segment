@@ -122,8 +122,8 @@ def main():
     num_epochs = configs.trainer_params["num_epochs"]
     with open(configs.trainer_params["model_settings"]) as file:
         network_arch = json.load(file)
-    c_reader.pretty_print(configs)
-
+        
+    trainlogger.log(c_reader.pretty_print(configs), level="INFO")
     # 6. Iterate over models for training
     for model_i in network_arch:
         try:

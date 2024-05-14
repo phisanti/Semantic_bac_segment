@@ -36,14 +36,19 @@ class ConfReader:
         opt = self.DictWithAttributeAccess(opt)
         return opt
 
-    def pretty_print(
-        self, d: Dict[str, Any], title: str = "Settings", indent: int = 0
-    ) -> None:
-        print("Training settings:")
+    def pretty_print(self, 
+                     d: Dict[str, Any], 
+                     title: str = "Settings", 
+                     indent: int = 0,
+                     direct_print: bool = False) -> str:
+        output = f"{title}:\n"
         for key, value in d.items():
-            print(" " * indent + str(key) + ":", end=" ")
+            output += " " * indent + str(key) + ": "
             if isinstance(value, dict):
-                print()
-                self.pretty_print(value, indent + 2)
+                output += "\n" + self.pretty_print(value, indent=indent + 2)
             else:
-                print(str(value))
+                output += str(value) + "\n"
+        if direct_print:
+            print(output)
+        else:
+            return output
