@@ -29,6 +29,7 @@ from semantic_bac_segment.loss_functions import (
     MultiClassDiceLoss,
     MultiClassWeightedBinaryCrossEntropy,
     MaxDiceLoss,
+    FocalLoss,
 )
 from semantic_bac_segment.transforms import (
     TIFFLoader,
@@ -114,6 +115,7 @@ def main():
             is_sigmoid=True, weight=[0.3, 0.1, 0.3, 0.3]
         ),
         "Cross_entropy_pytorch": CrossEntropyLoss(),
+        'Focal_loss' : FocalLoss(is_sigmoid=True, alpha=[0.3, 0.1, 0.3, 0.3])
     }
 
     # 5. Get list of architectures and run Training loop

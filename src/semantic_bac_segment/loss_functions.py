@@ -251,6 +251,57 @@ class MultiClassDiceLoss(nn.Module):
         return dice_loss
 
 
+class FocalLoss(nn.Module):
+    """
+    Computes the Focal loss between the predicted and target masks.
+
+    Args:
+        alpha (float or list): Weighting factor for the classes.
+        gamma (float): Focusing parameter to scale the loss.
+        size_average (bool): Whether to average the loss across all pixels.
+    """
+
+    def __init__(self, alpha=None, gamma=2.0, size_average=True, is_sigmoid=True):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.size_average = size_average
+        self.is_sigmoid = is_sigmoid
+
+    def forward(self, inputs, targets):
+        # Ensure inputs are in the form of probabilities
+        inputs = inputs.float()
+        targets = targets.float()
+
+        if self.is_sigmoid:
+            pass
+        else:
+            inputs = torch.sigmoid(inputs)
+
+        BCE_loss = nn.functional.binary_cross_entropy(inputs, targets, reduction='none')
+        
+        # Apply weights to the classes
+        if self.alpha is not None:
+            if isinstance(self.alpha, (float, int)):
+                alpha = torch.tensor(self.alpha).expand_as(targets).to(targets.device)
+            else:
+                alpha = torch.tensor(self.alpha).float().to(targets.device)
+                alpha = alpha.view(1, -1, 1, 1).expand_as(targets)
+            
+            at = alpha * targets + (1 - alpha) * (1 - targets)
+            BCE_loss = at * BCE_loss
+
+        # Calculate the Focal Loss
+        pt = torch.exp(-BCE_loss)
+        F_loss = (1 - pt) ** self.gamma * BCE_loss
+
+        if self.size_average:
+            return F_loss.mean()
+        else:
+            return F_loss.sum()
+
+
+
 class WeightedBinaryCrossEntropy(nn.Module):
     """
     Computes the weighted binary cross-entropy loss.
