@@ -1,8 +1,14 @@
-
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
-from semantic_bac_segment.models.nnblocks import ConvBlock, UpsampleBlock, ResBlock, ResModule, DilatedBlock
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from semantic_bac_segment.models.nnblocks import (
+    ConvBlock,
+    UpsampleBlock,
+    ResBlock,
+    ResModule,
+    DilatedBlock,
+)
 from typing import List, Union, Type
 import torch
 import torch.nn as nn
@@ -41,70 +47,78 @@ class Unet(nn.Module):
             and the number of layers in the decoder  is chosen accordingly
             (to maintain symmetry between encoder and decoder)
     """
-    def __init__(self,
-                 nb_classes: int = 1,
-                 nb_filters: int = 16,
-                 dropout: bool = False,
-                 batch_norm: bool = True,
-                 upsampling_mode: str = "bilinear",
-                 with_dilation: bool = False,
-                 **kwargs: List[int]) -> None:
+
+    def __init__(
+        self,
+        nb_classes: int = 1,
+        nb_filters: int = 16,
+        dropout: bool = False,
+        batch_norm: bool = True,
+        upsampling_mode: str = "bilinear",
+        with_dilation: bool = False,
+        **kwargs: List[int],
+    ) -> None:
         """
         Initializes model parameters
         """
         super(Unet, self).__init__()
         nbl = kwargs.get("layers", [1, 2, 2, 3])
-        dilation_values = torch.arange(2, 2*nbl[-1]+1, 2).tolist()
+        dilation_values = torch.arange(2, 2 * nbl[-1] + 1, 2).tolist()
         padding_values = dilation_values.copy()
-        dropout_vals = [.1, .2, .1] if dropout else [0, 0, 0]
-        self.c1 = ConvBlock(
-            2, nbl[0], 1, nb_filters,
-            batch_norm=batch_norm
-        )
+        dropout_vals = [0.1, 0.2, 0.1] if dropout else [0, 0, 0]
+        self.c1 = ConvBlock(2, nbl[0], 1, nb_filters, batch_norm=batch_norm)
         self.c2 = ConvBlock(
-            2, nbl[1], nb_filters, nb_filters*2,
-            batch_norm=batch_norm
+            2, nbl[1], nb_filters, nb_filters * 2, batch_norm=batch_norm
         )
         self.c3 = ConvBlock(
-            2, nbl[2], nb_filters*2, nb_filters*4,
+            2,
+            nbl[2],
+            nb_filters * 2,
+            nb_filters * 4,
             batch_norm=batch_norm,
-            dropout_=dropout_vals[0]
+            dropout_=dropout_vals[0],
         )
         if with_dilation:
             self.bn = DilatedBlock(
-                2, nb_filters*4, nb_filters*8,
+                2,
+                nb_filters * 4,
+                nb_filters * 8,
                 dilation_values=dilation_values,
                 padding_values=padding_values,
                 batch_norm=batch_norm,
-                dropout_=dropout_vals[1]
+                dropout_=dropout_vals[1],
             )
         else:
             self.bn = ConvBlock(
-                2, nbl[3], nb_filters*4, nb_filters*8,
+                2,
+                nbl[3],
+                nb_filters * 4,
+                nb_filters * 8,
                 batch_norm=batch_norm,
-                dropout_=dropout_vals[1]
+                dropout_=dropout_vals[1],
             )
         self.upsample_block1 = UpsampleBlock(
-            2, nb_filters*8, nb_filters*4,
-            mode=upsampling_mode)
+            2, nb_filters * 8, nb_filters * 4, mode=upsampling_mode
+        )
         self.c4 = ConvBlock(
-            2, nbl[2], nb_filters*8, nb_filters*4,
+            2,
+            nbl[2],
+            nb_filters * 8,
+            nb_filters * 4,
             batch_norm=batch_norm,
-            dropout_=dropout_vals[2]
+            dropout_=dropout_vals[2],
         )
         self.upsample_block2 = UpsampleBlock(
-            2, nb_filters*4, nb_filters*2,
-            mode=upsampling_mode)
+            2, nb_filters * 4, nb_filters * 2, mode=upsampling_mode
+        )
         self.c5 = ConvBlock(
-            2, nbl[1], nb_filters*4, nb_filters*2,
-            batch_norm=batch_norm
+            2, nbl[1], nb_filters * 4, nb_filters * 2, batch_norm=batch_norm
         )
         self.upsample_block3 = UpsampleBlock(
-            2, nb_filters*2, nb_filters,
-            mode=upsampling_mode)
+            2, nb_filters * 2, nb_filters, mode=upsampling_mode
+        )
         self.c6 = ConvBlock(
-            2, nbl[0], nb_filters*2, nb_filters,
-            batch_norm=batch_norm
+            2, nbl[0], nb_filters * 2, nb_filters, batch_norm=batch_norm
         )
         self.px = nn.Conv2d(nb_filters, nb_classes, 1, 1, 0)
 
@@ -168,15 +182,18 @@ class Unet_dynamic(nn.Module):
             and the number of layers in the decoder  is chosen accordingly
             (to maintain symmetry between encoder and decoder)
     """
-    def __init__(self,
-                 nb_classes: int = 1,
-                 nb_filters: int = 16,
-                 pooling_steps=4,
-                 dropout: bool = False,
-                 batch_norm: bool = True,
-                 upsampling_mode: str = "bilinear",
-                 with_dilation: bool = False,
-                 **kwargs: List[int]) -> None:
+
+    def __init__(
+        self,
+        nb_classes: int = 1,
+        nb_filters: int = 16,
+        pooling_steps=4,
+        dropout: bool = False,
+        batch_norm: bool = True,
+        upsampling_mode: str = "bilinear",
+        with_dilation: bool = False,
+        **kwargs: List[int],
+    ) -> None:
         """
         Initializes model parameters
         """
@@ -184,7 +201,7 @@ class Unet_dynamic(nn.Module):
         nbl = kwargs.get("layers", [1, 2, 2, 3])
         if pooling_steps >= len(nbl):
             nbl += [nbl[-1]] * (pooling_steps + 1 - len(nbl))
-        dilation_values = torch.arange(2, 2*nbl[-1]+1, 2).tolist()
+        dilation_values = torch.arange(2, 2 * nbl[-1] + 1, 2).tolist()
         padding_values = dilation_values.copy()
         dropout_vals = [0.1 if dropout else 0 for _ in range(pooling_steps + 1)]
 
@@ -195,12 +212,16 @@ class Unet_dynamic(nn.Module):
 
         # Encoder
         for i in range(pooling_steps):
-            in_channels = 1 if i == 0 else nb_filters * (2 ** i)
+            in_channels = 1 if i == 0 else nb_filters * (2**i)
             out_channels = nb_filters * (2 ** (i + 1))
             self.encoder_blocks.append(
                 ConvBlock(
-                    2, nbl[i], in_channels, out_channels,
-                    batch_norm=batch_norm, dropout_=dropout_vals[i]
+                    2,
+                    nbl[i],
+                    in_channels,
+                    out_channels,
+                    batch_norm=batch_norm,
+                    dropout_=dropout_vals[i],
                 )
             )
             self.pooling_layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
@@ -208,33 +229,43 @@ class Unet_dynamic(nn.Module):
         # Bottleneck
         if with_dilation:
             self.bottleneck = DilatedBlock(
-                2, nb_filters * (2 ** pooling_steps), nb_filters * (2 ** (pooling_steps + 1)),
+                2,
+                nb_filters * (2**pooling_steps),
+                nb_filters * (2 ** (pooling_steps + 1)),
                 dilation_values=dilation_values,
                 padding_values=padding_values,
                 batch_norm=batch_norm,
-                dropout_=dropout_vals[pooling_steps]
+                dropout_=dropout_vals[pooling_steps],
             )
         else:
             self.bottleneck = ConvBlock(
-                2, nbl[pooling_steps], nb_filters * (2 ** pooling_steps), nb_filters * (2 ** (pooling_steps + 1)),
+                2,
+                nbl[pooling_steps],
+                nb_filters * (2**pooling_steps),
+                nb_filters * (2 ** (pooling_steps + 1)),
                 batch_norm=batch_norm,
-                dropout_=dropout_vals[pooling_steps]
+                dropout_=dropout_vals[pooling_steps],
             )
 
         # Decoder
         for i in range(pooling_steps - 1, -1, -1):
             in_channels = nb_filters * (2 ** (i + 1)) * 2
             out_channels = nb_filters * (2 ** (i + 1))
-            self.upsampling_layers.append(UpsampleBlock(2, in_channels, out_channels, mode=upsampling_mode))
+            self.upsampling_layers.append(
+                UpsampleBlock(2, in_channels, out_channels, mode=upsampling_mode)
+            )
             self.decoder_blocks.append(
                 ConvBlock(
-                    2, nbl[i], in_channels, out_channels,
-                    batch_norm=batch_norm, dropout_=dropout_vals[i]
+                    2,
+                    nbl[i],
+                    in_channels,
+                    out_channels,
+                    batch_norm=batch_norm,
+                    dropout_=dropout_vals[i],
                 )
             )
 
         self.final_conv = nn.Conv2d(nb_filters, nb_classes, 1, 1, 0)
-
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -251,15 +282,16 @@ class Unet_dynamic(nn.Module):
         x = self.bottleneck(x)
 
         # Expanding path
-        for i, (upsampling_layer, decoder_block) in enumerate(zip(self.upsampling_layers, self.decoder_blocks)):
+        for i, (upsampling_layer, decoder_block) in enumerate(
+            zip(self.upsampling_layers, self.decoder_blocks)
+        ):
             x = upsampling_layer(x)
-            x = torch.cat([encoder_outputs[-i-1], x], dim=1)
+            x = torch.cat([encoder_outputs[-i - 1], x], dim=1)
             x = decoder_block(x)
 
         # Final layer used for pixel-wise convolution
         x = self.final_conv(x)
         return x
-
 
 
 class dilnet(nn.Module):
@@ -286,48 +318,47 @@ class dilnet(nn.Module):
             List with a number of layers for each block (Default: [3, 3, 3, 3])
     """
 
-    def __init__(self,
-                 nb_classes: int = 1,
-                 nb_filters: int = 25,
-                 dropout: bool = False,
-                 batch_norm: bool = True,
-                 upsampling_mode: str = "bilinear",
-                 **kwargs: List[int]) -> None:
+    def __init__(
+        self,
+        nb_classes: int = 1,
+        nb_filters: int = 25,
+        dropout: bool = False,
+        batch_norm: bool = True,
+        upsampling_mode: str = "bilinear",
+        **kwargs: List[int],
+    ) -> None:
         """
         Initializes model parameters
         """
         super(dilnet, self).__init__()
         nbl = kwargs.get("layers", [3, 3, 3, 3])
-        dilation_values_1 = torch.arange(2, 2*nbl[1]+1, 2).tolist()
+        dilation_values_1 = torch.arange(2, 2 * nbl[1] + 1, 2).tolist()
         padding_values_1 = dilation_values_1.copy()
-        dilation_values_2 = torch.arange(2, 2*nbl[2]+1, 2).tolist()
+        dilation_values_2 = torch.arange(2, 2 * nbl[2] + 1, 2).tolist()
         padding_values_2 = dilation_values_2.copy()
-        dropout_vals = [.3, .3] if dropout else [0, 0]
-        self.c1 = ConvBlock(
-                    2, nbl[0], 1, nb_filters,
-                    batch_norm=batch_norm
-        )
+        dropout_vals = [0.3, 0.3] if dropout else [0, 0]
+        self.c1 = ConvBlock(2, nbl[0], 1, nb_filters, batch_norm=batch_norm)
         self.at1 = DilatedBlock(
-                    2, nb_filters, nb_filters*2,
-                    dilation_values=dilation_values_1,
-                    padding_values=padding_values_1,
-                    batch_norm=batch_norm,
-                    dropout_=dropout_vals[0]
+            2,
+            nb_filters,
+            nb_filters * 2,
+            dilation_values=dilation_values_1,
+            padding_values=padding_values_1,
+            batch_norm=batch_norm,
+            dropout_=dropout_vals[0],
         )
         self.at2 = DilatedBlock(
-                    2, nb_filters*2, nb_filters*2,
-                    dilation_values=dilation_values_2,
-                    padding_values=padding_values_2,
-                    batch_norm=batch_norm,
-                    dropout_=dropout_vals[1]
+            2,
+            nb_filters * 2,
+            nb_filters * 2,
+            dilation_values=dilation_values_2,
+            padding_values=padding_values_2,
+            batch_norm=batch_norm,
+            dropout_=dropout_vals[1],
         )
-        self.up1 = UpsampleBlock(
-                    2, nb_filters*2, nb_filters,
-                    mode=upsampling_mode
-        )
+        self.up1 = UpsampleBlock(2, nb_filters * 2, nb_filters, mode=upsampling_mode)
         self.c2 = ConvBlock(
-                    2, nbl[3], nb_filters*2, nb_filters,
-                    batch_norm=batch_norm
+            2, nbl[3], nb_filters * 2, nb_filters, batch_norm=batch_norm
         )
         self.px = nn.Conv2d(nb_filters, nb_classes, 1, 1, 0)
 
@@ -366,11 +397,14 @@ class ResHedNet(nn.Module):
             in each segment (Default: [3, 4, 5])
 
     """
-    def __init__(self,
-                 nb_classes: int = 1,
-                 nb_filters: int = 64,
-                 upsampling_mode: str = "bilinear",
-                 **kwargs: List[int]) -> None:
+
+    def __init__(
+        self,
+        nb_classes: int = 1,
+        nb_filters: int = 64,
+        upsampling_mode: str = "bilinear",
+        **kwargs: List[int],
+    ) -> None:
         """
         Initializes model's parameters
         """
@@ -379,26 +413,22 @@ class ResHedNet(nn.Module):
         self.upsample = upsampling_mode
         self.net1 = ResModule(2, nbl[0], 1, nb_filters, True)
         self.net2 = nn.Sequential(
-            nn.MaxPool2d(2, 2),
-            ResModule(2, nbl[1], nb_filters, 2*nb_filters, True)
+            nn.MaxPool2d(2, 2), ResModule(2, nbl[1], nb_filters, 2 * nb_filters, True)
         )
         self.net3 = nn.Sequential(
             nn.MaxPool2d(2, 2),
-            ResModule(2, nbl[2], 2*nb_filters, 4*nb_filters, True)
+            ResModule(2, nbl[2], 2 * nb_filters, 4 * nb_filters, True),
         )
         self.net1score = nn.Sequential(
-            nn.Conv2d(nb_filters, nb_classes, 1, 1, 0),
-            nn.BatchNorm2d(nb_classes)
+            nn.Conv2d(nb_filters, nb_classes, 1, 1, 0), nn.BatchNorm2d(nb_classes)
         )
         self.net2score = nn.Sequential(
-            nn.Conv2d(2*nb_filters, nb_classes, 1, 1, 0),
-            nn.BatchNorm2d(nb_classes)
+            nn.Conv2d(2 * nb_filters, nb_classes, 1, 1, 0), nn.BatchNorm2d(nb_classes)
         )
         self.net3score = nn.Sequential(
-            nn.Conv2d(4*nb_filters, nb_classes, 1, 1, 0),
-            nn.BatchNorm2d(nb_classes)
+            nn.Conv2d(4 * nb_filters, nb_classes, 1, 1, 0), nn.BatchNorm2d(nb_classes)
         )
-        self.out = torch.nn.Conv2d(3*nb_classes, nb_classes, 1, 1, 0)
+        self.out = torch.nn.Conv2d(3 * nb_classes, nb_classes, 1, 1, 0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h, w = x.shape[2:4]
@@ -417,8 +447,8 @@ class ResHedNet(nn.Module):
 
 
 class SegResNet(nn.Module):
-    '''
-    Builds a fully convolutional neural network based on SegNet architecture 
+    """
+    Builds a fully convolutional neural network based on SegNet architecture
     with residual blocks for semantic segmentation
 
     Args:
@@ -439,44 +469,42 @@ class SegResNet(nn.Module):
             3-element list with a number of residual blocks
             in each residual segment (Default: [2, 2])
 
-    '''
-    def __init__(self,
-                 nb_classes: int = 1,
-                 nb_filters: int = 32,
-                 batch_norm: bool = True,
-                 upsampling_mode: str = "bilinear",
-                 **kwargs: List[int]
-                 ) -> None:
-        '''
+    """
+
+    def __init__(
+        self,
+        nb_classes: int = 1,
+        nb_filters: int = 32,
+        batch_norm: bool = True,
+        upsampling_mode: str = "bilinear",
+        **kwargs: List[int],
+    ) -> None:
+        """
         Initializes module parameters
-        '''
+        """
         super(SegResNet, self).__init__()
         nbl = kwargs.get("layers", [2, 2, 2])
-        self.c1 = ConvBlock(
-            2, 1, 1, nb_filters, batch_norm=batch_norm
-        )
+        self.c1 = ConvBlock(2, 1, 1, nb_filters, batch_norm=batch_norm)
         self.c2 = ResModule(
-            2, nbl[0], nb_filters, nb_filters*2, batch_norm=batch_norm
+            2, nbl[0], nb_filters, nb_filters * 2, batch_norm=batch_norm
         )
         self.bn = ResModule(
-            2, nbl[1], nb_filters*2, nb_filters*4, batch_norm=batch_norm
+            2, nbl[1], nb_filters * 2, nb_filters * 4, batch_norm=batch_norm
         )
         self.upsample_block1 = UpsampleBlock(
-            2, nb_filters*4, nb_filters*2, 2, upsampling_mode
+            2, nb_filters * 4, nb_filters * 2, 2, upsampling_mode
         )
         self.c3 = ResModule(
-            2, nbl[2], nb_filters*4, nb_filters*2, batch_norm=batch_norm
+            2, nbl[2], nb_filters * 4, nb_filters * 2, batch_norm=batch_norm
         )
         self.upsample_block2 = UpsampleBlock(
-            2, nb_filters*2, nb_filters, 2, upsampling_mode
+            2, nb_filters * 2, nb_filters, 2, upsampling_mode
         )
-        self.c4 = ConvBlock(
-            2, 1, nb_filters*2, nb_filters, batch_norm=batch_norm
-        )
+        self.c4 = ConvBlock(2, 1, nb_filters * 2, nb_filters, batch_norm=batch_norm)
         self.px = nn.Conv2d(nb_filters, nb_classes, 1, 1, 0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        '''Defines a forward pass'''
+        """Defines a forward pass"""
         # Contracting path
         c1 = self.c1(x)
         d1 = F.max_pool2d(c1, kernel_size=2, stride=2)
@@ -496,66 +524,65 @@ class SegResNet(nn.Module):
         return px
 
 
-def init_fcnn_model(model: Union[Type[nn.Module], str],
-                    nb_classes: int, **kwargs: [bool, int, List]
-                    ) -> Type[nn.Module]:
+def init_fcnn_model(
+    model: Union[Type[nn.Module], str], nb_classes: int, **kwargs: [bool, int, List]
+) -> Type[nn.Module]:
     """
     Initializes a fully convolutional neural network
     """
     if not isinstance(model, str) and hasattr(model, "state_dict"):
         meta_state_dict = {
-            'model_type': 'Seg', model: 'custom', 'nb_classes': nb_classes}
+            "model_type": "Seg",
+            model: "custom",
+            "nb_classes": nb_classes,
+        }
         return model, meta_state_dict
-    batch_norm = kwargs.get('batch_norm', True)
-    dropout = kwargs.get('dropout', False)
-    upsampling = kwargs.get('upsampling', "bilinear")
+    batch_norm = kwargs.get("batch_norm", True)
+    dropout = kwargs.get("dropout", False)
+    upsampling = kwargs.get("upsampling", "bilinear")
     meta_state_dict = {
-                'model_type': 'seg',
-                'model': model,
-                'nb_classes': nb_classes,
-                'batch_norm': batch_norm,
-                'dropout': dropout,
-                'upsampling': upsampling,
-            }
-    if isinstance(model, str) and model == 'Unet':
-        with_dilation = kwargs.get('with_dilation', False)
-        nb_filters = kwargs.get('nb_filters', 16)
+        "model_type": "seg",
+        "model": model,
+        "nb_classes": nb_classes,
+        "batch_norm": batch_norm,
+        "dropout": dropout,
+        "upsampling": upsampling,
+    }
+    if isinstance(model, str) and model == "Unet":
+        with_dilation = kwargs.get("with_dilation", False)
+        nb_filters = kwargs.get("nb_filters", 16)
         layers = kwargs.get("layers", [1, 2, 2, 3])
         net = Unet(
-            nb_classes, nb_filters, dropout,
-            batch_norm, upsampling, with_dilation,
-            layers=layers
+            nb_classes,
+            nb_filters,
+            dropout,
+            batch_norm,
+            upsampling,
+            with_dilation,
+            layers=layers,
         )
         meta_state_dict["with_dilation"] = with_dilation
-    elif isinstance(model, str) and model == 'dilnet':
-        nb_filters = kwargs.get('nb_filters', 25)
+    elif isinstance(model, str) and model == "dilnet":
+        nb_filters = kwargs.get("nb_filters", 25)
         layers = kwargs.get("layers", [1, 3, 3, 1])
         net = dilnet(
-            nb_classes, nb_filters,
-            dropout, batch_norm, upsampling,
-            layers=layers
+            nb_classes, nb_filters, dropout, batch_norm, upsampling, layers=layers
         )
-    elif isinstance(model, str) and model == 'SegResNet':
-        nb_filters = kwargs.get('nb_filters', 32)
+    elif isinstance(model, str) and model == "SegResNet":
+        nb_filters = kwargs.get("nb_filters", 32)
         layers = kwargs.get("layers", [2, 2, 2])
-        net = SegResNet(
-            nb_classes, nb_filters,
-            batch_norm, upsampling, layers=layers
-        )
-    elif isinstance(model, str) and model == 'ResHedNet':
-        nb_filters = kwargs.get('nb_filters', 64)
+        net = SegResNet(nb_classes, nb_filters, batch_norm, upsampling, layers=layers)
+    elif isinstance(model, str) and model == "ResHedNet":
+        nb_filters = kwargs.get("nb_filters", 64)
         layers = kwargs.get("layers", [3, 4, 5])
-        net = ResHedNet(
-            nb_classes, nb_filters,
-            upsampling, layers=layers
-        )
+        net = ResHedNet(nb_classes, nb_filters, upsampling, layers=layers)
     else:
         raise NotImplementedError(
             "Currently implemented models are 'Unet', 'dilnet', SegResNet', and 'ResHedNet'"
         )
     if model in ["ResHedNet", "SegResNet"]:
         meta_state_dict["dropout"] = None
-    if model == ['ResHedNet']:
+    if model == ["ResHedNet"]:
         meta_state_dict["batch_norm"] = True
     meta_state_dict["nb_filters"] = nb_filters
     meta_state_dict["layers"] = layers

@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import torchvision.transforms.functional as TF
 
+
 class DoubleConv(nn.Module):
-    def __init__(self, in_channels, out_channels, dropout_rate=.2):
+    def __init__(self, in_channels, out_channels, dropout_rate=0.2):
         super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, 1, 1, bias=False),
@@ -19,21 +20,22 @@ class DoubleConv(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+
 class AttentionBlock(nn.Module):
     def __init__(self, F_g, F_l, F_int):
         super(AttentionBlock, self).__init__()
         self.W_g = nn.Sequential(
             nn.Conv2d(F_g, F_int, kernel_size=1, stride=1, padding=0, bias=True),
-            nn.BatchNorm2d(F_int)
+            nn.BatchNorm2d(F_int),
         )
         self.W_x = nn.Sequential(
             nn.Conv2d(F_l, F_int, kernel_size=1, stride=1, padding=0, bias=True),
-            nn.BatchNorm2d(F_int)
+            nn.BatchNorm2d(F_int),
         )
         self.psi = nn.Sequential(
             nn.Conv2d(F_int, 1, kernel_size=1, stride=1, padding=0, bias=True),
             nn.BatchNorm2d(1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
         self.relu = nn.ReLU(inplace=True)
 
@@ -44,19 +46,20 @@ class AttentionBlock(nn.Module):
         psi = self.psi(psi)
         return x * psi
 
+
 class AttentionUNet(nn.Module):
     def __init__(
-            self, 
-            in_channels=1, 
-            out_channels=1, 
-            features=[64, 128, 256, 512], 
-            init_features=64, 
-            pooling_steps=4,
-            dropout_rate=.2
+        self,
+        in_channels=1,
+        out_channels=1,
+        features=[64, 128, 256, 512],
+        init_features=64,
+        pooling_steps=4,
+        dropout_rate=0.2,
     ):
         super(AttentionUNet, self).__init__()
 
-        if features == None:        
+        if features == None:
             features = [2**i for i in range(pooling_steps) if 2**i >= init_features]
         else:
             features = features
@@ -74,13 +77,16 @@ class AttentionUNet(nn.Module):
         for feature in reversed(features):
             self.ups.append(
                 nn.ConvTranspose2d(
-                    feature*2, feature, kernel_size=2, stride=2,
+                    feature * 2,
+                    feature,
+                    kernel_size=2,
+                    stride=2,
                 )
             )
             self.attentions.append(AttentionBlock(feature, feature, feature // 2))
-            self.ups.append(DoubleConv(feature*2, feature))
+            self.ups.append(DoubleConv(feature * 2, feature))
 
-        self.bottleneck = DoubleConv(features[-1], features[-1]*2)
+        self.bottleneck = DoubleConv(features[-1], features[-1] * 2)
         self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
 
     @classmethod
@@ -108,7 +114,6 @@ class AttentionUNet(nn.Module):
         """
         self.load_state_dict(torch.load(weights_path))
 
-            
     def forward(self, x):
         skip_connections = []
 
@@ -122,23 +127,30 @@ class AttentionUNet(nn.Module):
 
         for idx in range(0, len(self.ups), 2):
             x = self.ups[idx](x)
-            skip_connection = skip_connections[idx//2]
+            skip_connection = skip_connections[idx // 2]
 
             if x.shape != skip_connection.shape:
                 x = TF.resize(x, size=skip_connection.shape[2:])
 
-            attention = self.attentions[idx//2](g=x, x=skip_connection)
+            attention = self.attentions[idx // 2](g=x, x=skip_connection)
             concat_skip = torch.cat((attention, x), dim=1)
-            x = self.ups[idx+1](concat_skip)
+            x = self.ups[idx + 1](concat_skip)
 
         return self.final_conv(x)
 
 
 class AttentionUNet_fuse(nn.Module):
-    def __init__(self, in_channels=1, out_channels=1, features=[32, 64, 128, 256], init_features=64, pooling_steps=4):
+    def __init__(
+        self,
+        in_channels=1,
+        out_channels=1,
+        features=[32, 64, 128, 256],
+        init_features=64,
+        pooling_steps=4,
+    ):
         super(AttentionUNet_fuse, self).__init__()
 
-        if features == None:        
+        if features == None:
             features = [2**i for i in range(pooling_steps) if 2**i >= init_features]
         else:
             features = features
@@ -155,19 +167,24 @@ class AttentionUNet_fuse(nn.Module):
         # Multi-scale feature fusion
         self.fusion = nn.ModuleList()
         for i in range(len(features) - 1):
-            self.fusion.append(nn.Conv2d(features[i], features[i+1], kernel_size=1, stride=1))
+            self.fusion.append(
+                nn.Conv2d(features[i], features[i + 1], kernel_size=1, stride=1)
+            )
 
         # Up part of UNET
         for feature in reversed(features):
             self.ups.append(
                 nn.ConvTranspose2d(
-                    feature*2, feature, kernel_size=2, stride=2,
+                    feature * 2,
+                    feature,
+                    kernel_size=2,
+                    stride=2,
                 )
             )
             self.attentions.append(AttentionBlock(feature, feature, feature // 2))
-            self.ups.append(DoubleConv(feature*2, feature))
+            self.ups.append(DoubleConv(feature * 2, feature))
 
-        self.bottleneck = DoubleConv(features[-1], features[-1]*2)
+        self.bottleneck = DoubleConv(features[-1], features[-1] * 2)
         self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
 
     def forward(self, x):
@@ -191,20 +208,22 @@ class AttentionUNet_fuse(nn.Module):
 
         for idx in range(0, len(self.ups), 2):
             x = self.ups[idx](x)
-            skip_connection = skip_connections[idx//2]
+            skip_connection = skip_connections[idx // 2]
 
             if x.shape != skip_connection.shape:
                 x = TF.resize(x, size=skip_connection.shape[2:])
 
-            attention = self.attentions[idx//2](g=x, x=skip_connection)
+            attention = self.attentions[idx // 2](g=x, x=skip_connection)
             concat_skip = torch.cat((attention, x), dim=1)
-            x = self.ups[idx+1](concat_skip)
+            x = self.ups[idx + 1](concat_skip)
 
         return torch.sigmoid(self.final_conv(x))
 
 
 class DualPathwayAttUNet(nn.Module):
-    def __init__(self, in_channels=1, out_channels=1, features=[32, 64, 128, 256], **kwargs):
+    def __init__(
+        self, in_channels=1, out_channels=1, features=[32, 64, 128, 256], **kwargs
+    ):
         super(DualPathwayAttUNet, self).__init__()
 
         self.unet1 = AttentionUNet(in_channels, out_channels, features, **kwargs)

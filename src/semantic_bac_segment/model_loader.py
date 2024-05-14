@@ -3,18 +3,24 @@ from typing import Dict, Optional, Union
 from semantic_bac_segment.models.pytorch_cnnunet import Unet as atomai_unet
 from semantic_bac_segment.models.pytorch_altmodel import UNET as base_unet
 from semantic_bac_segment.models.pytorch_attention import AttentionUNet
-from monai.networks.nets import UNet as MonaiUnet 
+from monai.networks.nets import UNet as MonaiUnet
 from monai.networks.nets import AttentionUnet as MonaiAttentionUNet
 from monai.networks.nets import (
     UNETR,
-    AHNet, 
-    DenseNet169, 
-    EfficientNet, 
+    AHNet,
+    DenseNet169,
+    EfficientNet,
     DynUNet,
     SwinUNETR,
-    BasicUNetPlusPlus
+    BasicUNetPlusPlus,
 )
-def model_loader(network_architecture: Dict[str, Union[str, Dict]], device: torch.device, weights: Optional[str] = None) -> torch.nn.Module:
+
+
+def model_loader(
+    network_architecture: Dict[str, Union[str, Dict]],
+    device: torch.device,
+    weights: Optional[str] = None,
+) -> torch.nn.Module:
     """
     Loads a model based on the provided network architecture and device.
 
@@ -37,7 +43,7 @@ def model_loader(network_architecture: Dict[str, Union[str, Dict]], device: torc
         model_type = model_name.split("-")[0]
     else:
         model_type = model_name
-    
+
     # Create the model instance based on the model name
     if model_type == "MonaiUnet":
         model = MonaiUnet(**model_args).to(device)
@@ -65,7 +71,7 @@ def model_loader(network_architecture: Dict[str, Union[str, Dict]], device: torc
         model = AttentionUNet(**model_args).to(device)
     else:
         raise ValueError(f"Unknown model family: {model_type}")
-    
+
     if weights:
         model.load_state_dict(torch.load(weights, map_location=device))
 

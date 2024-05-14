@@ -18,7 +18,8 @@ class DoubleConv(nn.Module):
         conv (nn.Sequential): Sequential container of convolutional layers.
 
     """
-    def __init__(self, in_channels, out_channels, dropout_rate=.2):
+
+    def __init__(self, in_channels, out_channels, dropout_rate=0.2):
         super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, 1, 1, bias=False),
@@ -37,18 +38,18 @@ class DoubleConv(nn.Module):
 
 class HEDUNet(nn.Module):
     def __init__(
-            self, 
-            in_channels=1, 
-            out_channels=1, 
-            features=[64, 128, 256, 512], 
-            init_features=64, 
-            pooling_steps=4,
-            dropout_rate=.2,
-            deep_supervision=True
+        self,
+        in_channels=1,
+        out_channels=1,
+        features=[64, 128, 256, 512],
+        init_features=64,
+        pooling_steps=4,
+        dropout_rate=0.2,
+        deep_supervision=True,
     ):
         super(HEDUNet, self).__init__()
 
-        if features is None:        
+        if features is None:
             features = [2**i for i in range(pooling_steps) if 2**i >= init_features]
         else:
             features = features
@@ -65,20 +66,26 @@ class HEDUNet(nn.Module):
         for feature in reversed(features):
             self.ups.append(
                 nn.ConvTranspose2d(
-                    feature*2, feature, kernel_size=2, stride=2,
+                    feature * 2,
+                    feature,
+                    kernel_size=2,
+                    stride=2,
                 )
             )
-            self.ups.append(DoubleConv(feature*2, feature))
+            self.ups.append(DoubleConv(feature * 2, feature))
 
-        self.bottleneck = DoubleConv(features[-1], features[-1]*2)
+        self.bottleneck = DoubleConv(features[-1], features[-1] * 2)
         self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
 
         # HED-like predictors
-        self.predictors = nn.ModuleList([
-            nn.Conv2d(feature, out_channels, kernel_size=1)
-            if i != len(features) - 1 else nn.Conv2d(feature*2, out_channels, kernel_size=1)
-            for i, feature in enumerate(reversed(features))
-        ])
+        self.predictors = nn.ModuleList(
+            [
+                nn.Conv2d(feature, out_channels, kernel_size=1)
+                if i != len(features) - 1
+                else nn.Conv2d(feature * 2, out_channels, kernel_size=1)
+                for i, feature in enumerate(reversed(features))
+            ]
+        )
 
         self.deep_supervision = deep_supervision
 
@@ -98,16 +105,16 @@ class HEDUNet(nn.Module):
 
         for idx in range(0, len(self.ups), 2):
             x = self.ups[idx](x)
-            skip_connection = skip_connections[-(idx//2+1)]
+            skip_connection = skip_connections[-(idx // 2 + 1)]
 
             if x.shape != skip_connection.shape:
-                x = TF.resize(x, size=skip_connection.shape[2:], mode='nearest')
+                x = TF.resize(x, size=skip_connection.shape[2:], mode="nearest")
 
             concat_skip = torch.cat((skip_connection, x), dim=1)
-            x = self.ups[idx+1](concat_skip)
+            x = self.ups[idx + 1](concat_skip)
 
             if idx < len(self.ups) - 2:
-                predictions_list.append(self.predictors[idx//2+1](x))
+                predictions_list.append(self.predictors[idx // 2 + 1](x))
 
         final_prediction = self.final_conv(x)
         predictions_list.append(final_prediction)
@@ -116,4 +123,3 @@ class HEDUNet(nn.Module):
             return final_prediction, list(reversed(predictions_list))
         else:
             return final_prediction
-

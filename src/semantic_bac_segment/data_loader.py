@@ -1,6 +1,7 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 import numpy as np
@@ -9,6 +10,7 @@ from typing import List, Tuple
 from torch.utils.data.dataset import Dataset
 from monai.data import Dataset, PatchDataset, DataLoader
 from monai.transforms import RandSpatialCropSamplesd
+
 
 class TrainSplit:
     """
@@ -20,8 +22,14 @@ class TrainSplit:
         filetype (str, optional): File extension of the images and masks. Defaults to '.tiff'.
         val_ratio (float, optional): Ratio of samples to use for validation. Defaults to 0.1.
     """
-    
-    def __init__(self, image_path: str, mask_path: str, filetype: str = '.tiff', val_ratio: float = 0.1):
+
+    def __init__(
+        self,
+        image_path: str,
+        mask_path: str,
+        filetype: str = ".tiff",
+        val_ratio: float = 0.1,
+    ):
         self.image_path = image_path
         self.mask_path = mask_path
         self.val_ratio = val_ratio
@@ -37,15 +45,23 @@ class TrainSplit:
         assert os.path.exists(self.image_path), "Image directory does not exist"
         assert os.path.exists(self.mask_path), "Mask directory does not exist"
 
-        image_files = sorted(glob.glob(os.path.join(self.image_path, '*'+ self.filetype)))
-        mask_files = sorted(glob.glob(os.path.join(self.mask_path, '*'+ self.filetype)))
+        image_files = sorted(
+            glob.glob(os.path.join(self.image_path, "*" + self.filetype))
+        )
+        mask_files = sorted(
+            glob.glob(os.path.join(self.mask_path, "*" + self.filetype))
+        )
 
-        assert len(image_files) == len(mask_files), "Number of images and masks do not match"
+        assert len(image_files) == len(
+            mask_files
+        ), "Number of images and masks do not match"
         self.image_mask_pairs = list(zip(image_files, mask_files))
 
         return self.image_mask_pairs
 
-    def split_samples(self, verbose: bool = True) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+    def split_samples(
+        self, verbose: bool = True
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
         """
         Splits the image-mask pairs into training and validation sets.
 
@@ -58,7 +74,6 @@ class TrainSplit:
 
         train_dicts, valid_dicts = self.image_mask_pairs, []
         if self.val_ratio > 0:
-
             # Obtain & shuffle data indices
             num_data_dicts = len(self.image_mask_pairs)
             indices = np.arange(num_data_dicts)
@@ -72,9 +87,11 @@ class TrainSplit:
             # Assign data dicts by split indices
             train_dicts = [self.image_mask_pairs[idx] for idx in train_indices]
             valid_dicts = [self.image_mask_pairs[idx] for idx in valid_indices]
-            
+
             if verbose:
-                print(f"\n(DataLoaded) Training data size: {len(train_dicts)}, Validation data size: {len(valid_dicts)}\n")
+                print(
+                    f"\n(DataLoaded) Training data size: {len(train_dicts)}, Validation data size: {len(valid_dicts)}\n"
+                )
 
         return train_dicts, valid_dicts
 
@@ -89,18 +106,17 @@ class BacSegmentDatasetCreator:
         val_ratio (float, optional): Ratio of samples to use for validation. Defaults to 0.3.
     """
 
-    def __init__(self, 
-                 source_folder: str, 
-                 mask_folder: str, 
-                 val_ratio: float = 0.3
-
-                 ):
+    def __init__(self, source_folder: str, mask_folder: str, val_ratio: float = 0.3):
         self.source_folder = source_folder
         self.mask_folder = mask_folder
-        assert 0 <= val_ratio <= 1, f"Validation ratio must be between 0 and 1, but got {val_ratio}"
+        assert (
+            0 <= val_ratio <= 1
+        ), f"Validation ratio must be between 0 and 1, but got {val_ratio}"
         self.val_ratio = val_ratio
 
-    def create_datasets(self, train_transform, val_transform) -> Tuple[Dataset, Dataset]:
+    def create_datasets(
+        self, train_transform, val_transform
+    ) -> Tuple[Dataset, Dataset]:
         """
         Creates training and validation datasets.
 
@@ -112,7 +128,9 @@ class BacSegmentDatasetCreator:
             Tuple[Dataset, Dataset]: Tuple containing the training and validation datasets.
         """
 
-        splitter = TrainSplit(self.source_folder, self.mask_folder, val_ratio=self.val_ratio)
+        splitter = TrainSplit(
+            self.source_folder, self.mask_folder, val_ratio=self.val_ratio
+        )
         splitter.get_samplepairs()
         train_pairs, val_pairs = splitter.split_samples()
 
@@ -124,11 +142,13 @@ class BacSegmentDatasetCreator:
 
         return self.train_dataset, self.val_dataset
 
-    def create_patches(self, 
-                 roi_size: Tuple[int, int] = (256, 256), 
-                 num_samples: int = 20,
-                 train_transforms=None,
-                 val_transforms=None) -> Tuple[DataLoader, DataLoader]:
+    def create_patches(
+        self,
+        roi_size: Tuple[int, int] = (256, 256),
+        num_samples: int = 20,
+        train_transforms=None,
+        val_transforms=None,
+    ) -> Tuple[DataLoader, DataLoader]:
         """
         Creates training and validation patch datasets.
 
@@ -152,7 +172,7 @@ class BacSegmentDatasetCreator:
         train_patch_dataset = PatchDataset(
             data=self.train_dataset,
             patch_func=patch_func,
-            samples_per_image=num_samples, 
+            samples_per_image=num_samples,
             transform=train_transforms,
         )
 
@@ -162,13 +182,10 @@ class BacSegmentDatasetCreator:
             samples_per_image=num_samples,
             transform=val_transforms,
         )
-        
-        train_ds = DataLoader(train_patch_dataset, 
-                              batch_size=num_samples)
 
-        val_ds = DataLoader(val_patch_dataset,
-                            batch_size=num_samples)
+        train_ds = DataLoader(train_patch_dataset, batch_size=num_samples)
 
+        val_ds = DataLoader(val_patch_dataset, batch_size=num_samples)
 
         return train_ds, val_ds
 
@@ -176,7 +193,7 @@ class BacSegmentDatasetCreator:
 def collate_fn(batch):
     # Unzip the batch
     images, masks = zip(*batch)
-    
+
     # Stack the images and masks along a new dimension
     images = torch.stack(images, dim=0)
     masks = torch.stack(masks, dim=0)
@@ -184,10 +201,10 @@ def collate_fn(batch):
     # Get the number of crops and the batch size
     num_crops = images.shape[1]
     batch_size = images.shape[0]
-    
+
     # Calculate total number of samples
     total_samples = num_crops * batch_size
-    
+
     # Reshape the images and masks to combine crops with the total number of samples
     images = images.view(total_samples, 1, images.shape[-2], images.shape[-1])
     masks = masks.view(total_samples, 1, masks.shape[-2], masks.shape[-1])

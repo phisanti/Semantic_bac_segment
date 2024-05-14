@@ -6,7 +6,14 @@ from typing import Tuple
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels=1, out_channels=1, init_features=64, pooling_steps=2, dropout_rate=0.2):
+    def __init__(
+        self,
+        in_channels=1,
+        out_channels=1,
+        init_features=64,
+        pooling_steps=2,
+        dropout_rate=0.2,
+    ):
         super(UNet, self).__init__()
 
         features = init_features
@@ -14,18 +21,33 @@ class UNet(nn.Module):
         self.decoders = nn.ModuleList()
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.upconv = nn.ModuleList()
-        self.dropout_rate=dropout_rate
+        self.dropout_rate = dropout_rate
 
         for i in range(pooling_steps):
-            input_features = in_channels if i == 0 else features * (2**(i-1))
+            input_features = in_channels if i == 0 else features * (2 ** (i - 1))
             output_features = features * (2**i)
-            self.encoders.append(UNet._block(input_features, output_features, name=f"enc{i+1}"))
-            self.decoders.insert(0, UNet._block(output_features * 2, output_features, name=f"dec{i+1}"))
-            self.upconv.insert(0, nn.ConvTranspose2d(output_features * 2, output_features, kernel_size=2, stride=2))
+            self.encoders.append(
+                UNet._block(input_features, output_features, name=f"enc{i+1}")
+            )
+            self.decoders.insert(
+                0, UNet._block(output_features * 2, output_features, name=f"dec{i+1}")
+            )
+            self.upconv.insert(
+                0,
+                nn.ConvTranspose2d(
+                    output_features * 2, output_features, kernel_size=2, stride=2
+                ),
+            )
 
-        self.bottleneck = UNet._block(features * (2**(pooling_steps-1)), features * (2**pooling_steps), name="bottleneck", dropout_rate=self.dropout_rate)
-        self.conv = nn.Conv2d(in_channels=features, out_channels=out_channels, kernel_size=1)
-
+        self.bottleneck = UNet._block(
+            features * (2 ** (pooling_steps - 1)),
+            features * (2**pooling_steps),
+            name="bottleneck",
+            dropout_rate=self.dropout_rate,
+        )
+        self.conv = nn.Conv2d(
+            in_channels=features, out_channels=out_channels, kernel_size=1
+        )
 
     def load_weights(self, weights_path):
         """
@@ -35,7 +57,6 @@ class UNet(nn.Module):
             weights_path (str): Path to the weights file.
         """
         self.load_state_dict(torch.load(weights_path))
-
 
     @classmethod
     def from_pretrained(cls, weights_path, **kwargs):
@@ -53,7 +74,6 @@ class UNet(nn.Module):
         model.load_weights(weights_path)
         return model
 
-
     def forward(self, x):
         encs = []
         for i, encoder in enumerate(self.encoders):
@@ -65,38 +85,45 @@ class UNet(nn.Module):
 
         for i, decoder in enumerate(self.decoders):
             x = self.upconv[i](x)
-            x = torch.cat((x, encs[-(i+1)]), dim=1)
+            x = torch.cat((x, encs[-(i + 1)]), dim=1)
             x = decoder(x)
 
         return self.conv(x)
 
-
     @staticmethod
     def _block(in_channels, features, name, dropout_rate=0.2):
-        return nn.Sequential(OrderedDict([
-            (f"{name}_conv2d" , nn.Conv2d(
-                in_channels=in_channels,
-                out_channels=features,
-                kernel_size=3,
-                padding=1,
-                bias=False,
-            )),
-            (f"{name}_norm2d1", nn.BatchNorm2d(num_features=features)),
-            (f"{name}_relu1", nn.ReLU(inplace=True)),
-            (f"{name}_conv2d2", nn.Conv2d(
-                in_channels=features,
-                out_channels=features,
-                kernel_size=3,
-                padding=1,
-                bias=False,
-            )),
-            (f"{name}_norm2d2", nn.BatchNorm2d(num_features=features)),
-            (f"{name}_relu2", nn.ReLU(inplace=True)),
-            (f"{name}_dropout", nn.Dropout(p=dropout_rate))
-            ]
+        return nn.Sequential(
+            OrderedDict(
+                [
+                    (
+                        f"{name}_conv2d",
+                        nn.Conv2d(
+                            in_channels=in_channels,
+                            out_channels=features,
+                            kernel_size=3,
+                            padding=1,
+                            bias=False,
+                        ),
+                    ),
+                    (f"{name}_norm2d1", nn.BatchNorm2d(num_features=features)),
+                    (f"{name}_relu1", nn.ReLU(inplace=True)),
+                    (
+                        f"{name}_conv2d2",
+                        nn.Conv2d(
+                            in_channels=features,
+                            out_channels=features,
+                            kernel_size=3,
+                            padding=1,
+                            bias=False,
+                        ),
+                    ),
+                    (f"{name}_norm2d2", nn.BatchNorm2d(num_features=features)),
+                    (f"{name}_relu2", nn.ReLU(inplace=True)),
+                    (f"{name}_dropout", nn.Dropout(p=dropout_rate)),
+                ]
             )
         )
-    
+
 
 class DoubleConvBlock(nn.Module):
     """
@@ -111,7 +138,15 @@ class DoubleConvBlock(nn.Module):
         dropout (nn.Dropout): Dropout layer.
 
     """
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int = 3, padding: int = 1, dropout_rate: float = 0.2):
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int = 3,
+        padding: int = 1,
+        dropout_rate: float = 0.2,
+    ):
         super(DoubleConvBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, padding=padding)
         self.bn1 = nn.BatchNorm2d(out_channels)
@@ -139,11 +174,20 @@ class DoubleConvBlock(nn.Module):
         x = self.dropout(x)
         return x
 
+
 class DoubleComb_UNet(nn.Module):
     """
     U-Net architecture for image segmentation.
     """
-    def __init__(self, in_channels: int, out_channels: int, init_features: int = 64, pooling_steps: int = 4, dropout_rate: float = 0.2):
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        init_features: int = 64,
+        pooling_steps: int = 4,
+        dropout_rate: float = 0.2,
+    ):
         super(DoubleComb_UNet, self).__init__()
         self.pooling_steps = pooling_steps
         self.dropout_rate = dropout_rate
@@ -166,13 +210,19 @@ class DoubleComb_UNet(nn.Module):
         self.bottleneck = DoubleConvBlock(init_features * 8, init_features * 16)
 
         # Decoding layers
-        self.upconv4 = nn.ConvTranspose2d(init_features * 16, init_features * 8, 2, stride=2)
+        self.upconv4 = nn.ConvTranspose2d(
+            init_features * 16, init_features * 8, 2, stride=2
+        )
         self.decoder4 = DoubleConvBlock(init_features * 16, init_features * 8)
 
-        self.upconv3 = nn.ConvTranspose2d(init_features * 8, init_features * 4, 2, stride=2)
+        self.upconv3 = nn.ConvTranspose2d(
+            init_features * 8, init_features * 4, 2, stride=2
+        )
         self.decoder3 = DoubleConvBlock(init_features * 8, init_features * 4)
 
-        self.upconv2 = nn.ConvTranspose2d(init_features * 4, init_features * 2, 2, stride=2)
+        self.upconv2 = nn.ConvTranspose2d(
+            init_features * 4, init_features * 2, 2, stride=2
+        )
         self.decoder2 = DoubleConvBlock(init_features * 4, init_features * 2)
 
         self.upconv1 = nn.ConvTranspose2d(init_features * 2, init_features, 2, stride=2)
@@ -236,7 +286,7 @@ class DoubleComb_UNet(nn.Module):
         """
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.BatchNorm2d):
@@ -245,9 +295,15 @@ class DoubleComb_UNet(nn.Module):
 
 
 # Example usage
-                
-if __name__ == '__main__':
-    model = UNet(in_channels=1, out_channels=1, init_features=64, pooling_steps=4, dropout_rate=0.2)
+
+if __name__ == "__main__":
+    model = UNet(
+        in_channels=1,
+        out_channels=1,
+        init_features=64,
+        pooling_steps=4,
+        dropout_rate=0.2,
+    )
     input_tensor = torch.randn(1, 1, 256, 256)
     output = model(input_tensor)
     print(output.shape)

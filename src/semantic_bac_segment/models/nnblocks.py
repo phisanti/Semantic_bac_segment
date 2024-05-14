@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class ConvBlock(nn.Module):
     """
     Creates block of layers each consisting of convolution operation,
@@ -32,14 +33,20 @@ class ConvBlock(nn.Module):
         dropout_:
             Dropout value for each layer in the block
     """
-    def __init__(self,
-                 ndim: int, nb_layers: int,
-                 input_channels: int, output_channels: int,
-                 kernel_size: Union[Tuple[int], int] = 3,
-                 stride: Union[Tuple[int], int] = 1,
-                 padding: Union[Tuple[int], int] = 1,
-                 batch_norm: bool = False, lrelu_a: float = 0.01,
-                 dropout_: float = 0) -> None:
+
+    def __init__(
+        self,
+        ndim: int,
+        nb_layers: int,
+        input_channels: int,
+        output_channels: int,
+        kernel_size: Union[Tuple[int], int] = 3,
+        stride: Union[Tuple[int], int] = 1,
+        padding: Union[Tuple[int], int] = 1,
+        batch_norm: bool = False,
+        lrelu_a: float = 0.01,
+        dropout_: float = 0,
+    ) -> None:
         """
         Initializes module parameters
         """
@@ -50,11 +57,15 @@ class ConvBlock(nn.Module):
         block = []
         for idx in range(nb_layers):
             input_channels = output_channels if idx > 0 else input_channels
-            block.append(conv(input_channels,
-                         output_channels,
-                         kernel_size=kernel_size,
-                         stride=stride,
-                         padding=padding))
+            block.append(
+                conv(
+                    input_channels,
+                    output_channels,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                )
+            )
             if dropout_ > 0:
                 block.append(nn.Dropout(dropout_))
             block.append(nn.LeakyReLU(negative_slope=lrelu_a))
@@ -91,34 +102,35 @@ class UpsampleBlock(nn.Module):
         mode:
             Upsampling mode. Select between "bilinear" and "nearest"
     """
-    def __init__(self,
-                 ndim: int,
-                 input_channels: int,
-                 output_channels: int,
-                 scale_factor: int = 2,
-                 mode: str = "bilinear") -> None:
+
+    def __init__(
+        self,
+        ndim: int,
+        input_channels: int,
+        output_channels: int,
+        scale_factor: int = 2,
+        mode: str = "bilinear",
+    ) -> None:
         """
         Initializes module parameters
         """
         super(UpsampleBlock, self).__init__()
-        if not any([mode == 'bilinear', mode == 'nearest']):
-            raise NotImplementedError(
-                "use 'bilinear' or 'nearest' for upsampling mode")
+        if not any([mode == "bilinear", mode == "nearest"]):
+            raise NotImplementedError("use 'bilinear' or 'nearest' for upsampling mode")
         if not 0 < ndim < 3:
             raise AssertionError("ndim must be equal to 1 or 2")
         conv = nn.Conv2d if ndim == 2 else nn.Conv1d
         self.scale_factor = scale_factor
         self.mode = mode if ndim == 2 else "nearest"
         self.conv = conv(
-            input_channels, output_channels,
-            kernel_size=1, stride=1, padding=0)
+            input_channels, output_channels, kernel_size=1, stride=1, padding=0
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Defines a forward pass
         """
-        x = F.interpolate(
-            x, scale_factor=self.scale_factor, mode=self.mode)
+        x = F.interpolate(x, scale_factor=self.scale_factor, mode=self.mode)
         return self.conv(x)
 
 
@@ -147,16 +159,18 @@ class ResBlock(nn.Module):
             Value of alpha parameter in leaky ReLU activation
             for each layer in the block
     """
-    def __init__(self,
-                 ndim: int,
-                 input_channels: int,
-                 output_channels: int,
-                 kernel_size: Union[Tuple[int], int] = 3,
-                 stride: Union[Tuple[int], int] = 1,
-                 padding: Union[Tuple[int], int] = 1,
-                 batch_norm: bool = True,
-                 lrelu_a: float = 0.01
-                 ) -> None:
+
+    def __init__(
+        self,
+        ndim: int,
+        input_channels: int,
+        output_channels: int,
+        kernel_size: Union[Tuple[int], int] = 3,
+        stride: Union[Tuple[int], int] = 1,
+        padding: Union[Tuple[int], int] = 1,
+        batch_norm: bool = True,
+        lrelu_a: float = 0.01,
+    ) -> None:
         """
         Initializes block's parameters
         """
@@ -166,21 +180,15 @@ class ResBlock(nn.Module):
         conv = nn.Conv2d if ndim == 2 else nn.Conv1d
         self.lrelu_a = lrelu_a
         self.batch_norm = batch_norm
-        self.c0 = conv(input_channels,
-                       output_channels,
-                       kernel_size=1,
-                       stride=1,
-                       padding=0)
-        self.c1 = conv(output_channels,
-                       output_channels,
-                       kernel_size=3,
-                       stride=1,
-                       padding=1)
-        self.c2 = conv(output_channels,
-                       output_channels,
-                       kernel_size=3,
-                       stride=1,
-                       padding=1)
+        self.c0 = conv(
+            input_channels, output_channels, kernel_size=1, stride=1, padding=0
+        )
+        self.c1 = conv(
+            output_channels, output_channels, kernel_size=3, stride=1, padding=1
+        )
+        self.c2 = conv(
+            output_channels, output_channels, kernel_size=3, stride=1, padding=1
+        )
         if batch_norm:
             bn = nn.BatchNorm2d if ndim == 2 else nn.BatchNorm1d
             self.bn1 = bn(output_channels)
@@ -216,14 +224,16 @@ class ResModule(nn.Module):
             batch_norm: Batch normalization for non-unity layers in the block
             lrelu_a: value of negative slope for LeakyReLU activation
     """
-    def __init__(self,
-                 ndim: int,
-                 res_depth: int,
-                 input_channels: int,
-                 output_channels: int,
-                 batch_norm: bool = True,
-                 lrelu_a: float = 0.01
-                 ) -> None:
+
+    def __init__(
+        self,
+        ndim: int,
+        res_depth: int,
+        input_channels: int,
+        output_channels: int,
+        batch_norm: bool = True,
+        lrelu_a: float = 0.01,
+    ) -> None:
         """
         Initializes module parameters
         """
@@ -232,8 +242,14 @@ class ResModule(nn.Module):
         for i in range(res_depth):
             input_channels = output_channels if i > 0 else input_channels
             res_module.append(
-                ResBlock(ndim, input_channels, output_channels,
-                         lrelu_a=lrelu_a, batch_norm=batch_norm))
+                ResBlock(
+                    ndim,
+                    input_channels,
+                    output_channels,
+                    lrelu_a=lrelu_a,
+                    batch_norm=batch_norm,
+                )
+            )
         self.res_module = nn.Sequential(*res_module)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -276,11 +292,20 @@ class DilatedBlock(nn.Module):
         dropout_:
             Dropout value for each layer in the block
     """
-    def __init__(self, ndim: int, input_channels: int, output_channels: int,
-                 dilation_values: List[int], padding_values: List[int],
-                 kernel_size: Union[Tuple[int], int] = 3,
-                 stride: Union[Tuple[int], int] = 1, lrelu_a: float = 0.01,
-                 batch_norm: bool = False, dropout_: float = 0) -> None:
+
+    def __init__(
+        self,
+        ndim: int,
+        input_channels: int,
+        output_channels: int,
+        dilation_values: List[int],
+        padding_values: List[int],
+        kernel_size: Union[Tuple[int], int] = 3,
+        stride: Union[Tuple[int], int] = 1,
+        lrelu_a: float = 0.01,
+        batch_norm: bool = False,
+        dropout_: float = 0,
+    ) -> None:
         """
         Initializes module parameters
         """
@@ -291,13 +316,17 @@ class DilatedBlock(nn.Module):
         atrous_module = []
         for idx, (dil, pad) in enumerate(zip(dilation_values, padding_values)):
             input_channels = output_channels if idx > 0 else input_channels
-            atrous_module.append(conv(input_channels,
-                                      output_channels,
-                                      kernel_size=kernel_size,
-                                      stride=stride,
-                                      padding=pad,
-                                      dilation=dil,
-                                      bias=True))
+            atrous_module.append(
+                conv(
+                    input_channels,
+                    output_channels,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=pad,
+                    dilation=dil,
+                    bias=True,
+                )
+            )
             if dropout_ > 0:
                 atrous_module.append(nn.Dropout(dropout_))
             atrous_module.append(nn.LeakyReLU(negative_slope=lrelu_a))

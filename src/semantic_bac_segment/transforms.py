@@ -1,7 +1,8 @@
 import logging
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cv2
 import torch
 import tifffile
@@ -12,25 +13,25 @@ from semantic_bac_segment.utils import tensor_debugger
 
 
 class ComposeInspect(object):
-    def __init__(self, keys=("image", "label"), step=''):
+    def __init__(self, keys=("image", "label"), step=""):
         self.keys = keys
         self.step = step
 
     def __call__(self, data):
         for key in self.keys:
             if isinstance(data[key], torch.Tensor):
-                tensor_debugger(data[key], key+self.step)
+                tensor_debugger(data[key], key + self.step)
             elif isinstance(data[key], np.ndarray):
                 x = torch.from_numpy(data[key].copy())
-                tensor_debugger(x, key+self.step)
+                tensor_debugger(x, key + self.step)
             else:
-                print(f'Loading key: {data[key]}')        
-                        
+                print(f"Loading key: {data[key]}")
+
         return data
 
 
 class TIFFLoader(object):
-    def __init__(self, keys=("image", "label"), add_channel_dim='auto'):
+    def __init__(self, keys=("image", "label"), add_channel_dim="auto"):
         self.keys = keys
         self.add_channel_dim = add_channel_dim
 
@@ -39,7 +40,7 @@ class TIFFLoader(object):
             if isinstance(data[key], str):
                 data[key] = tifffile.imread(data[key])
                 # Add an extra channel dimension
-                if self.add_channel_dim == 'auto' and data[key].ndim == 2:
+                if self.add_channel_dim == "auto" and data[key].ndim == 2:
                     data[key] = np.expand_dims(data[key], axis=0)
                 elif self.add_channel_dim:
                     data[key] = np.expand_dims(data[key], axis=0)
@@ -50,14 +51,16 @@ class TIFFLoader(object):
                 # The data is already an array, so no need to load it
                 pass
             else:
-                print(f'Loading key: {data[key]}')        
-                raise ValueError(f"Unsupported data type for key '{key}': {type(data[key])}")
-                        
+                print(f"Loading key: {data[key]}")
+                raise ValueError(
+                    f"Unsupported data type for key '{key}': {type(data[key])}"
+                )
+
         return data
 
 
 class ClearBackgroundTransform(object):
-    def __init__(self, keys, sigma_r=25, method='divide', convert_32=True):
+    def __init__(self, keys, sigma_r=25, method="divide", convert_32=True):
         self.keys = keys
         self.sigma_r = sigma_r
         self.method = method
@@ -72,15 +75,16 @@ class ClearBackgroundTransform(object):
 
             if img.ndim == 2:
                 img = self.backgroud_remove_2d(img, self.sigma_r, self.method)
-            
-            elif img.ndim == 3:
 
+            elif img.ndim == 3:
                 for i in range(img.shape[0]):
-                    img[i]=self.backgroud_remove_2d(img[i], self.sigma_r, self.method)
-            
+                    img[i] = self.backgroud_remove_2d(img[i], self.sigma_r, self.method)
+
             else:
-                raise NotImplementedError("Background removal for 3D images is not implemented yet.")
-            
+                raise NotImplementedError(
+                    "Background removal for 3D images is not implemented yet."
+                )
+
             data[key] = img
         return data
 
@@ -93,15 +97,14 @@ class ClearBackgroundTransform(object):
         gaussian_blur = cv2.GaussianBlur(img, (sigma_r, sigma_r), 0)
 
         # Background remove
-        if self.method == 'subtract':
+        if self.method == "subtract":
             background_removed = cv2.subtract(img, gaussian_blur)
-        elif self.method == 'divide':
+        elif self.method == "divide":
             background_removed = cv2.divide(img, gaussian_blur)
         else:
             raise ValueError("Invalid method. Choose either 'subtract' or 'divide'")
-        
-        return background_removed
 
+        return background_removed
 
 
 class NormalizePercentileTransform(object):
@@ -121,25 +124,29 @@ class NormalizePercentileTransform(object):
                 raise ValueError("Data must be torch.Tensor or numpy.ndarray")
 
         return data
-    
+
     def tensor_method(self, x):
-        x=x.clone()
+        x = x.clone()
         x = x.to(torch.float32)
         mi = torch.quantile(x, self.pmin / 100.0)
         ma = torch.quantile(x, self.pmax / 100.0)
-        eps = torch.finfo(torch.float32).eps  # Get the smallest positive value for the data type
+        eps = torch.finfo(
+            torch.float32
+        ).eps  # Get the smallest positive value for the data type
         x = (x - mi) / (ma - mi + eps)
 
         if self.clip:
             x = torch.clamp(x, 0, 1)
         return x
-    
+
     def numpy_method(self, x):
         x = x.copy()
         x = x.astype(np.float32, copy=False)
         mi = np.percentile(x, self.pmin)
         ma = np.percentile(x, self.pmax)
-        eps = np.finfo(np.float32).eps  # Get the smallest positive value for the data type
+        eps = np.finfo(
+            np.float32
+        ).eps  # Get the smallest positive value for the data type
 
         x = (x - mi) / (ma - mi + eps)
 
@@ -147,6 +154,7 @@ class NormalizePercentileTransform(object):
             x = np.clip(x, 0, 1)
 
         return x
+
 
 class Ensure4D(object):
     def __init__(self, keys):

@@ -5,15 +5,15 @@ trainer_params:
   multiclass: false       # Whether the segmentation map contains multiple classes or not
   model_settings: './train_models.json'   # Location to save the trained models
   input_size: 256               # Size of the input images (increase due to stiching time)
-  num_epochs: 2
+  num_epochs: 25
   debugging: false
   verbose: true
 
 # Data import parameters
 dataset_params:
   source_dir: './data/source'                   # Location images and masks for training. Two subdirectories are expected: 'source' and 'mask'
-  masks_dir: './data/multiclass_masks3class'    # Location images and masks for training. Two subdirectories are expected: 'source' and 'mask'
-  n_patches: 1                                  # Batch size for training
+  masks_dir: './data/multiclass_masks'    # Location images and masks for training. Two subdirectories are expected: 'source' and 'mask'
+  n_patches: 10                                  # Batch size for training
   val_ratio: .2                                 # Validation ratio (percentage of data to use for validation)
 
 # Optimizer parameters (common names, so no explanation needed)

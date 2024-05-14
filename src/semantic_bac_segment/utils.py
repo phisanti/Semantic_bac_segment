@@ -2,8 +2,9 @@ import numpy as np
 import itertools
 import torch
 
+
 def adjust_dimensions(img, dim_order):
-    target_order = 'TSCXY'
+    target_order = "TSCXY"
     missing_dims = set(target_order) - set(dim_order)
 
     # Add missing dimensions
@@ -20,8 +21,7 @@ def adjust_dimensions(img, dim_order):
 
 
 def stack_indexer(nframes=[0], nslices=[0], nchannels=[0]):
-
-    dimensions =[]
+    dimensions = []
     for dimension in [nframes, nslices, nchannels]:
         if isinstance(dimension, int):
             if dimension < 0:
@@ -29,20 +29,24 @@ def stack_indexer(nframes=[0], nslices=[0], nchannels=[0]):
             dimensions.append([dimension])
         elif isinstance(dimension, (list, range)):
             if not all(isinstance(i, int) and i >= 0 for i in dimension):
-                raise ValueError("All elements in the list dimensions must be positive integers.")
+                raise ValueError(
+                    "All elements in the list dimensions must be positive integers."
+                )
             dimensions.append(dimension)
         else:
-            raise TypeError("All dimensions must be either positive integers or lists of positive integers.")
+            raise TypeError(
+                "All dimensions must be either positive integers or lists of positive integers."
+            )
 
     combinations = list(itertools.product(*dimensions))
     index_table = np.array(combinations)
     return index_table
 
 
-def unit_converter(value, conversion_factor=1, to_unit='pixel'):
-    if to_unit == 'um':
+def unit_converter(value, conversion_factor=1, to_unit="pixel"):
+    if to_unit == "um":
         return value * conversion_factor
-    elif to_unit == 'pixel':
+    elif to_unit == "pixel":
         return value / conversion_factor
     else:
         raise ValueError("Invalid unit. Choose either 'um' or 'pixel'.")
@@ -50,16 +54,16 @@ def unit_converter(value, conversion_factor=1, to_unit='pixel'):
 
 def get_bit_depth(img):
     dtype_to_bit_depth = {
-        'uint8': 8,
-        'uint16': 16,
-        'uint32': 32,
-        'uint64': 64,
-        'int8': 8,
-        'int16': 16,
-        'int32': 32,
-        'int64': 64,
-        'float32': 32,
-        'float64': 64
+        "uint8": 8,
+        "uint16": 16,
+        "uint32": 32,
+        "uint64": 64,
+        "int8": 8,
+        "int16": 16,
+        "int32": 32,
+        "int64": 64,
+        "float32": 32,
+        "float64": 64,
     }
 
     bit_depth = dtype_to_bit_depth[str(img.dtype)]
@@ -71,7 +75,7 @@ def convert_image(img, dtype):
     # Shift the image intensity range to [0, 255]
     img_shifted = img - np.min(img)
     img_scaled = img_shifted / np.max(img_shifted)
-    
+
     if dtype == np.uint8:
         img_converted = (img_scaled * 255).astype(np.uint8)
     elif dtype == np.uint16:
@@ -80,15 +84,14 @@ def convert_image(img, dtype):
         img_converted = img_scaled.astype(dtype)
     else:
         raise ValueError(f"Unsupported data type: {dtype}")
-    
+
     return img_converted
 
 
 def invert_image(img, bit_depth):
-    
-    bit_depth=bit_depth
-    inverted_image=2**bit_depth - 1 - img
-    
+    bit_depth = bit_depth
+    inverted_image = 2**bit_depth - 1 - img
+
     return inverted_image
 
 
@@ -97,7 +100,7 @@ def round_to_odd(number):
 
 
 def crop_image(img, start_h, h, start_w, w):
-    crop = img[start_h:start_h+h, start_w:start_w+w]
+    crop = img[start_h : start_h + h, start_w : start_w + w]
     return crop
 
 
@@ -110,7 +113,7 @@ def make_binary(image):
     """
     if image.dtype != np.uint8:
         raise ValueError("Input image must be of type uint8")
-    
+
     image[image > 127.5] = 255
     image[image < 127.5] = 0
     image = image.astype("uint8")
@@ -140,6 +143,7 @@ def range_01(image):
     image = (image - np.min(image)) / (np.max(image) - np.min(image))
     return image
 
+
 def normalize_percentile(x, pmin=1, pmax=99.8, clip=False, dtype=np.float32):
     """
     Percentile-based image normalization.
@@ -167,6 +171,7 @@ def normalize_percentile(x, pmin=1, pmax=99.8, clip=False, dtype=np.float32):
 
     return x
 
+
 def normalize_min_max(x, dtype=np.float32):
     """
     Min-max normalization for masks.
@@ -184,7 +189,7 @@ def normalize_min_max(x, dtype=np.float32):
     return x
 
 
-def add_padding(img, pad_size, mode='symmetric'):
+def add_padding(img, pad_size, mode="symmetric"):
     """Pad the image to in_size
     Args :
         img : numpy array of images
@@ -197,12 +202,14 @@ def add_padding(img, pad_size, mode='symmetric'):
     padded_img = np.pad(img, pad_size, mode=mode)
     return padded_img
 
+
 def empty_gpu_cache(device):
     # Clear the GPU cache
-    if device.type == 'cuda':
+    if device.type == "cuda":
         torch.cuda.empty_cache()
-    elif device.type == 'mps':
+    elif device.type == "mps":
         torch.mps.empty_cache()
+
 
 def get_device():
     """
@@ -218,17 +225,18 @@ def get_device():
     else:
         return torch.device("cpu")
 
-def tensor_debugger(tensor, name='tensor', logger=None):
+
+def tensor_debugger(tensor, name="tensor", logger=None):
     messages = [
-        f'{name} shape: {tensor.shape}',
-        f'nans {name} max: {torch.isnan(tensor).any()}',
-        f'inf {name} max: {torch.isinf(tensor).any()}',
-        f'{name} max: {tensor.max()}',
-        f'{name} min: {tensor.min()}'
+        f"{name} shape: {tensor.shape}",
+        f"nans {name} max: {torch.isnan(tensor).any()}",
+        f"inf {name} max: {torch.isinf(tensor).any()}",
+        f"{name} max: {tensor.max()}",
+        f"{name} min: {tensor.min()}",
     ]
 
     for message in messages:
-        if logger is not None and logger.is_level('DEBUG'):
-            logger.log(message, level='DEBUG')
+        if logger is not None and logger.is_level("DEBUG"):
+            logger.log(message, level="DEBUG")
         else:
             print(message)

@@ -2,6 +2,7 @@ import yaml
 import os
 from typing import Any, Dict
 
+
 class ConfReader:
     """
     Load yaml config file using DictWithAttributeAccess object_hook.
@@ -35,10 +36,12 @@ class ConfReader:
         opt = self.DictWithAttributeAccess(opt)
         return opt
 
-    def pretty_print(self, d: Dict[str, Any], title: str = 'Settings', indent: int = 0) -> None:
-        print('Training settings:')
+    def pretty_print(
+        self, d: Dict[str, Any], title: str = "Settings", indent: int = 0
+    ) -> None:
+        print("Training settings:")
         for key, value in d.items():
-            print(' ' * indent + str(key) + ':', end=' ')
+            print(" " * indent + str(key) + ":", end=" ")
             if isinstance(value, dict):
                 print()
                 self.pretty_print(value, indent + 2)

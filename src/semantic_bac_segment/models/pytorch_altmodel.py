@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.transforms.functional as TF
 
+
 class DoubleConv(nn.Module):
     """
     Double Convolution Block.
@@ -17,7 +18,8 @@ class DoubleConv(nn.Module):
         conv (nn.Sequential): Sequential container of convolutional layers.
 
     """
-    def __init__(self, in_channels, out_channels, dropout_rate=.2):
+
+    def __init__(self, in_channels, out_channels, dropout_rate=0.2):
         super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, 1, 1, bias=False),
@@ -33,23 +35,33 @@ class DoubleConv(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+
 class SobelLayer(nn.Module):
     def __init__(self):
         super(SobelLayer, self).__init__()
         self.sobel_x = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=1, bias=False)
         self.sobel_y = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=1, bias=False)
 
-        sobel_kernel_x = torch.tensor([[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]])
-        sobel_kernel_y = torch.tensor([[-1., -2., -1.], [0., 0., 0.], [1., 2., 1.]])
+        sobel_kernel_x = torch.tensor(
+            [[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]]
+        )
+        sobel_kernel_y = torch.tensor(
+            [[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]]
+        )
 
-        self.sobel_x.weight = nn.Parameter(sobel_kernel_x.float().unsqueeze(0).unsqueeze(0))
-        self.sobel_y.weight = nn.Parameter(sobel_kernel_y.float().unsqueeze(0).unsqueeze(0))
+        self.sobel_x.weight = nn.Parameter(
+            sobel_kernel_x.float().unsqueeze(0).unsqueeze(0)
+        )
+        self.sobel_y.weight = nn.Parameter(
+            sobel_kernel_y.float().unsqueeze(0).unsqueeze(0)
+        )
 
     def forward(self, x):
         edge_x = self.sobel_x(x)
         edge_y = self.sobel_y(x)
         edges = torch.sqrt(torch.pow(edge_x, 2) + torch.pow(edge_y, 2))
-        return edges 
+        return edges
+
 
 class UNET(nn.Module):
     """
@@ -75,17 +87,17 @@ class UNET(nn.Module):
     """
 
     def __init__(
-            self, 
-            in_channels=1, 
-            out_channels=1, 
-            features=[64, 128, 256, 512], 
-            init_features=64, 
-            pooling_steps=4,
-            dropout_rate=.2
+        self,
+        in_channels=1,
+        out_channels=1,
+        features=[64, 128, 256, 512],
+        init_features=64,
+        pooling_steps=4,
+        dropout_rate=0.2,
     ):
         super(UNET, self).__init__()
 
-        if features == None:        
+        if features == None:
             features = [2**i for i in range(pooling_steps) if 2**i >= init_features]
         else:
             features = features
@@ -102,14 +114,16 @@ class UNET(nn.Module):
         for feature in reversed(features):
             self.ups.append(
                 nn.ConvTranspose2d(
-                    feature*2, feature, kernel_size=2, stride=2,
+                    feature * 2,
+                    feature,
+                    kernel_size=2,
+                    stride=2,
                 )
             )
-            self.ups.append(DoubleConv(feature*2, feature))
+            self.ups.append(DoubleConv(feature * 2, feature))
 
-        self.bottleneck = DoubleConv(features[-1], features[-1]*2)
+        self.bottleneck = DoubleConv(features[-1], features[-1] * 2)
         self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
-
 
     def load_weights(self, weights_path):
         """
@@ -119,7 +133,6 @@ class UNET(nn.Module):
             weights_path (str): Path to the weights file.
         """
         self.load_state_dict(torch.load(weights_path))
-
 
     @classmethod
     def from_pretrained(cls, weights_path, **kwargs):
@@ -136,7 +149,6 @@ class UNET(nn.Module):
         model = cls(**kwargs)
         model.load_weights(weights_path)
         return model
-
 
     def forward(self, x):
         """Forward pass of the model.
@@ -157,13 +169,13 @@ class UNET(nn.Module):
 
         for idx in range(0, len(self.ups), 2):
             x = self.ups[idx](x)
-            skip_connection = skip_connections[idx//2]
+            skip_connection = skip_connections[idx // 2]
 
             if x.shape != skip_connection.shape:
                 x = TF.resize(x, size=skip_connection.shape[2:])
 
             concat_skip = torch.cat((skip_connection, x), dim=1)
-            x = self.ups[idx+1](concat_skip)
+            x = self.ups[idx + 1](concat_skip)
 
         return self.final_conv(x)
 
@@ -187,7 +199,6 @@ class DualPathwayUNet(nn.Module):
         out = out1 + out2
 
         return torch.sigmoid(out)
-    
 
 
 class UNET_edges(nn.Module):
@@ -214,17 +225,17 @@ class UNET_edges(nn.Module):
     """
 
     def __init__(
-            self, 
-            in_channels=1, 
-            out_channels=1, 
-            features=[64, 128, 256, 512], 
-            init_features=64, 
-            pooling_steps=4,
-            dropout_rate=.2
+        self,
+        in_channels=1,
+        out_channels=1,
+        features=[64, 128, 256, 512],
+        init_features=64,
+        pooling_steps=4,
+        dropout_rate=0.2,
     ):
         super(UNET_edges, self).__init__()
 
-        if features == None:        
+        if features == None:
             features = [2**i for i in range(pooling_steps) if 2**i >= init_features]
         else:
             features = features
@@ -243,14 +254,16 @@ class UNET_edges(nn.Module):
         for feature in reversed(features):
             self.ups.append(
                 nn.ConvTranspose2d(
-                    feature*2, feature, kernel_size=2, stride=2,
+                    feature * 2,
+                    feature,
+                    kernel_size=2,
+                    stride=2,
                 )
             )
-            self.ups.append(DoubleConv(feature*2, feature))
+            self.ups.append(DoubleConv(feature * 2, feature))
 
-        self.bottleneck = DoubleConv(features[-1], features[-1]*2)
+        self.bottleneck = DoubleConv(features[-1], features[-1] * 2)
         self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
-
 
     def load_weights(self, weights_path):
         """
@@ -260,7 +273,6 @@ class UNET_edges(nn.Module):
             weights_path (str): Path to the weights file.
         """
         self.load_state_dict(torch.load(weights_path))
-
 
     @classmethod
     def from_pretrained(cls, weights_path, **kwargs):
@@ -278,7 +290,6 @@ class UNET_edges(nn.Module):
         model.load_weights(weights_path)
         return model
 
-
     def forward(self, x):
         x = self.sobel(x)
 
@@ -294,12 +305,12 @@ class UNET_edges(nn.Module):
 
         for idx in range(0, len(self.ups), 2):
             x = self.ups[idx](x)
-            skip_connection = skip_connections[idx//2]
+            skip_connection = skip_connections[idx // 2]
 
             if x.shape != skip_connection.shape:
                 x = TF.resize(x, size=skip_connection.shape[2:])
 
             x = torch.cat([x, skip_connection], dim=1)  # Fuse features
-            x = self.ups[idx+1](x)
+            x = self.ups[idx + 1](x)
 
         return torch.sigmoid(self.final_conv(x))

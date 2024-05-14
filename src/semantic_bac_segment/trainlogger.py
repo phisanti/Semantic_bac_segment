@@ -1,5 +1,6 @@
 import logging
 
+
 class TrainLogger:
     """
     A custom logger class for logging training information.
@@ -9,8 +10,10 @@ class TrainLogger:
         file_name (str, optional): The name of the log file. Defaults to 'log.txt'.
         level (str, optional): The logging level. Defaults to 'INFO'.
     """
-    
-    def __init__(self, name: str, file_name: str = 'log.txt', level: str = 'INFO') -> None:
+
+    def __init__(
+        self, name: str, file_name: str = "log.txt", level: str = "INFO"
+    ) -> None:
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level)
 
@@ -21,7 +24,9 @@ class TrainLogger:
         fh.setLevel(level)
 
         # Add formatter
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
         ch.setFormatter(formatter)
         fh.setFormatter(formatter)
 
@@ -30,7 +35,7 @@ class TrainLogger:
             self.logger.addHandler(ch)
             self.logger.addHandler(fh)
 
-    def log(self, message: str, level: str = 'INFO') -> None:
+    def log(self, message: str, level: str = "INFO") -> None:
         """
         Logs a message at the specified level.
 
@@ -42,8 +47,8 @@ class TrainLogger:
             AssertionError: If the specified log level is invalid.
         """
         self._check_level(level)
-        
-        log_level=getattr(logging, level)
+
+        log_level = getattr(logging, level)
         self.logger.log(log_level, message)
 
     def is_level(self, level_str: str) -> bool:
@@ -60,7 +65,7 @@ class TrainLogger:
             AssertionError: If the specified log level is invalid.
         """
         self._check_level(level_str)
-        return self.logger.level == getattr(logging, level_str.upper())    
+        return self.logger.level == getattr(logging, level_str.upper())
 
     def _check_level(self, level_str: str) -> None:
         """
@@ -72,5 +77,7 @@ class TrainLogger:
         Raises:
             AssertionError: If the specified log level is invalid.
         """
-        valid_levels = ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET']
-        assert level_str in valid_levels, f'Invalid log level: {level_str}. Must be one of: {valid_levels}'
+        valid_levels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"]
+        assert (
+            level_str in valid_levels
+        ), f"Invalid log level: {level_str}. Must be one of: {valid_levels}"
