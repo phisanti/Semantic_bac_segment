@@ -80,7 +80,7 @@ class Segmentator:
             img_tensor = img_tensor.half()  # Convert input to half-precision
         else:
             img_tensor = img_tensor.float()
-            
+
         # Create SlidingWindowInferer
         inferer = SlidingWindowInferer(
             roi_size=self.patch_size, overlap=self.overlap_ratio, **kwargs
@@ -190,7 +190,7 @@ class Segmentator:
         images: np.ndarray,
         pmin: float = 1,
         pmax: float = 99.8,
-        clip: bool = False,
+        clip: bool = True,
         dtype: np.dtype = np.float32,
     ) -> np.ndarray:
         """
