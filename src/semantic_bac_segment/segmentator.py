@@ -54,6 +54,8 @@ class Segmentator:
         self.half_precision = half_precision
         if self.half_precision:
             self.model.half()
+        else:
+            self.model.float()
 
     def predict(self, image: np.ndarray, is_3D: bool=False, sigmoid: bool=True, **kwargs: Any) -> np.ndarray:
         """
@@ -76,7 +78,9 @@ class Segmentator:
         img_tensor = torch.from_numpy(image).to(self.device)
         if self.half_precision:
             img_tensor = img_tensor.half()  # Convert input to half-precision
-
+        else:
+            img_tensor = img_tensor.float()
+            
         # Create SlidingWindowInferer
         inferer = SlidingWindowInferer(
             roi_size=self.patch_size, overlap=self.overlap_ratio, **kwargs
