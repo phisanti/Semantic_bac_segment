@@ -55,7 +55,7 @@ class Segmentator:
         if self.half_precision:
             self.model.half()
 
-    def predict(self, image: np.ndarray, **kwargs: Any) -> np.ndarray:
+    def predict(self, image: np.ndarray, is_3D: bool=False, **kwargs: Any) -> np.ndarray:
         """
         Predicts the segmentation mask for the given image. It can handle 2D images or a stack of 2D images.
         This method connects the model with the monai SlidingWindowInferer to perform inference on patches of the input image.
@@ -71,7 +71,7 @@ class Segmentator:
 
         # Prepare image
         original_shape = image.ndim
-        image = self.ensure_4d(image)
+        image = self.ensure_4d(image, is_3D)
         image = normalize_percentile(image)
         img_tensor = torch.from_numpy(image).to(self.device)
         if self.half_precision:
@@ -86,9 +86,9 @@ class Segmentator:
             output_mask = inferer(img_tensor, self.model)
 
             output_mask = output_mask.cpu().numpy()
-        if len(original_shape) == 2:
+        if original_shape == 2:
             output_mask = output_mask[0, 0]
-        elif len(original_shape) == 3:
+        elif original_shape == 3:
             output_mask = output_mask[0]
         else:
             pass
@@ -148,7 +148,7 @@ class Segmentator:
         except Exception as e:
             raise Exception(f"Unexpected error occurred: {str(e)}")
 
-    def ensure_4d(self, img: np.ndarray) -> np.ndarray:
+    def ensure_4d(self, is_3D, img: np.ndarray) -> np.ndarray:
         """
         Ensures that the input image has 4 dimensions (batch, channel, height, width).
         This is the standard format expected by PyTorch models.
@@ -162,9 +162,13 @@ class Segmentator:
         if img.ndim == 2:
             # Add channel and batch dimensions if the array is 2D
             img = np.expand_dims(img, axis=(0, 1))
-        elif img.ndim == 3:
-            # Add a batch dimension if the array is 3D
+        elif img.ndim == 3 and is_3D:
+            # Add a channel dimension if the array is multi-stack
             img = np.expand_dims(img, axis=0)
+        elif img.ndim == 3 and not is_3D:
+            # Add a batch dimension if the array is multi-channel
+            img = np.expand_dims(img, axis=1)
+
         elif img.ndim == 4:
             # No modification needed if the array is already 4D
             pass
