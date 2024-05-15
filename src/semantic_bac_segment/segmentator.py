@@ -55,7 +55,7 @@ class Segmentator:
         if self.half_precision:
             self.model.half()
 
-    def predict(self, image: np.ndarray, is_3D: bool=False, **kwargs: Any) -> np.ndarray:
+    def predict(self, image: np.ndarray, is_3D: bool=False, sigmoid: bool=True, **kwargs: Any) -> np.ndarray:
         """
         Predicts the segmentation mask for the given image. It can handle 2D images or a stack of 2D images.
         This method connects the model with the monai SlidingWindowInferer to perform inference on patches of the input image.
@@ -86,19 +86,16 @@ class Segmentator:
             output_mask = inferer(img_tensor, self.model)
 
             output_mask = output_mask.cpu().numpy()
-        if original_shape == 2:
-            output_mask = output_mask[0, 0]
-        elif original_shape == 3:
-            output_mask = output_mask[0]
-        else:
-            pass
 
         # Free up tensors
         del img_tensor, image
         gc.collect()
         empty_gpu_cache(self.device)
 
-        return output_mask
+        if sigmoid:
+            output_mask = self.sigmoid(output_mask)
+
+        return output_mask  
 
     def get_model(
         self, path: str, device: torch.device, model_graph: torch.nn.Module = None
@@ -148,13 +145,14 @@ class Segmentator:
         except Exception as e:
             raise Exception(f"Unexpected error occurred: {str(e)}")
 
-    def ensure_4d(self, is_3D, img: np.ndarray) -> np.ndarray:
+    def ensure_4d(self, img: np.ndarray, is_3D: bool) -> np.ndarray:
         """
         Ensures that the input image has 4 dimensions (batch, channel, height, width).
         This is the standard format expected by PyTorch models.
 
         Args:
             img (numpy.ndarray): The input image.
+            is_3D (bool): Wether the image is a 3D volume or a 2D image.
 
         Returns:
             numpy.ndarray: The image with 4 dimensions.
@@ -178,3 +176,7 @@ class Segmentator:
             )
 
         return img
+
+    @staticmethod
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-x))
