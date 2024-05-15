@@ -72,7 +72,7 @@ class Segmentator:
         # Prepare image
         original_shape = image.ndim
         image = self.ensure_4d(image, is_3D)
-        image = normalize_percentile(image)
+        image = self.normalize_percentile_batch(image)
         img_tensor = torch.from_numpy(image).to(self.device)
         if self.half_precision:
             img_tensor = img_tensor.half()  # Convert input to half-precision
@@ -180,3 +180,36 @@ class Segmentator:
     @staticmethod
     def sigmoid(x):
         return 1 / (1 + np.exp(-x))
+
+    @staticmethod
+    def normalize_percentile_batch(
+        images: np.ndarray,
+        pmin: float = 1,
+        pmax: float = 99.8,
+        clip: bool = False,
+        dtype: np.dtype = np.float32,
+    ) -> np.ndarray:
+        """
+        Percentile-based image normalization for a batch of images.
+
+        Args:
+            images (numpy.ndarray): Input array of shape (batch_size, height, width).
+            pmin (float): Lower percentile value (default: 1).
+            pmax (float): Upper percentile value (default: 99.8).
+            clip (bool): Whether to clip the output values to the range [0, 1] (default: False).
+            dtype (numpy.dtype): Output data type (default: np.float32).
+
+        Returns:
+            numpy.ndarray: Normalized array of shape (batch_size, height, width).
+        """
+        images = images.astype(dtype, copy=False)
+        mi = np.percentile(images, pmin, axis=(2, 3), keepdims=True)
+        ma = np.percentile(images, pmax, axis=(2, 3), keepdims=True)
+        eps = np.finfo(dtype).eps  # Get the smallest positive value for the data type
+
+        images = (images - mi) / (ma - mi + eps)
+
+        if clip:
+            images = np.clip(images, 0, 1)
+
+        return images
