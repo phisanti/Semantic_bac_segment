@@ -57,11 +57,11 @@ def main():
         [
             TIFFLoader(keys=["image"]),
             TIFFLoader(
-                keys=["label"], add_channel_dim=configs.trainer_params["multiclass"]
+                keys=["label"], add_channel_dim=configs.trainer_params["binary_segmentation"]
             ),  # If running on 2D images, change to True
             ClearBackgroundTransform(
                 keys=["image"], sigma_r=25, method="divide", convert_32=True
-            ),
+            )
         ]
     )
 
@@ -70,13 +70,12 @@ def main():
         [
             RandZoomd(keys=["image", "label"], prob=0.5, min_zoom=0.8, max_zoom=1.2),
             RandRotate90d(keys=["image", "label"], prob=0.5, max_k=3),
-            # RandGaussianNoised(keys=["image"], prob=0.5, mean=0.0, std=0.1),
+            RandGaussianNoised(keys=["image"], prob=0.5, mean=0.0, std=0.1),
             RandGaussianSmoothd(
                 keys=["image"], prob=0.5, sigma_x=(0.1, 1.1), sigma_y=(0.1, 1.1)
             ),
             NormalizePercentileTransform(keys=["image"], pmax=95),
             ScaleIntensityd(keys=["label"]),
-            # Ensure4D(keys=["image", "label"]),
             ToTensord(keys=["image", "label"]),
         ]
     )
@@ -84,7 +83,6 @@ def main():
         [
             NormalizePercentileTransform(keys=["image"], pmax=95),
             ScaleIntensityd(keys=["label"]),
-            # Ensure4D(keys=["image", "label"]),
             ToTensord(keys=["image", "label"]),
         ]
     )
@@ -106,16 +104,16 @@ def main():
     )
 
     # 4. Get loss and metrics
-    loss_function = MultiClassDiceLoss(is_sigmoid=True, weight=[0.3, 0.1, 0.3, 0.3])
+    loss_function = DiceLoss(is_sigmoid=True)
     metrics = {
-        "MaxDice": MaxDiceLoss(is_sigmoid=True, include_background=False),
-        "Dice": MultiClassDiceLoss(is_sigmoid=True),
+        #"MaxDice": MaxDiceLoss(is_sigmoid=True, include_background=False),
+        #"Dice": MultiClassDiceLoss(is_sigmoid=True),
         "Monai_diceloss": monai_dice(to_onehot_y=False, sigmoid=False),
-        "CrossEntropy": MultiClassWeightedBinaryCrossEntropy(
-            is_sigmoid=True, weight=[0.3, 0.1, 0.3, 0.3]
-        ),
+        #"CrossEntropy": MultiClassWeightedBinaryCrossEntropy(
+        #    is_sigmoid=True
+        #),
         "Cross_entropy_pytorch": CrossEntropyLoss(),
-        'Focal_loss' : FocalLoss(is_sigmoid=True, alpha=[0.3, 0.1, 0.3, 0.3])
+        'Focal_loss' : FocalLoss(is_sigmoid=True)
     }
 
     # 5. Get list of architectures and run Training loop
@@ -149,6 +147,7 @@ def main():
                 logger=trainlogger,
                 debugging=configs.trainer_params["debugging"],
             )
+            trainer.set_early_stop(patience=configs.trainer_params["early_stop_patiente"])
             trainer.logger.log(
                 f"Training on {device} for {num_epochs} epochs", level="INFO"
             )

@@ -216,4 +216,7 @@ class Segmentator:
         if clip:
             images = np.clip(images, 0, 1)
 
+        # Force output type
+        images = images.astype(dtype, copy=False)
+        
         return images

@@ -128,8 +128,8 @@ class NormalizePercentileTransform(object):
     def tensor_method(self, x):
         x = x.clone()
         x = x.to(torch.float32)
-        mi = torch.quantile(x, self.pmin / 100.0, dim=(2, 3), keepdim=True)
-        ma = torch.quantile(x, self.pmax / 100.0, dim=(2, 3), keepdim=True)
+        mi = torch.quantile(x, self.pmin / 100.0)
+        ma = torch.quantile(x, self.pmax / 100.0)
         eps = torch.finfo(
             torch.float32
         ).eps  # Get the smallest positive value for the data type
@@ -142,8 +142,8 @@ class NormalizePercentileTransform(object):
     def numpy_method(self, x):
         x = x.copy()
         x = x.astype(np.float32, copy=False)
-        mi = np.percentile(x, self.pmin, dim=(2, 3), keepdim=True)
-        ma = np.percentile(x, self.pmax, dim=(2, 3), keepdim=True)
+        mi = np.percentile(x, self.pmin)
+        ma = np.percentile(x, self.pmax)
         eps = np.finfo(
             np.float32
         ).eps  # Get the smallest positive value for the data type
