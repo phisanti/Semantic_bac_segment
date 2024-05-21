@@ -77,7 +77,7 @@ class HistEq(object):
             elif img.ndim == 3:
                 equalized=np.zeros_like(img).astype(np.float32)
                 for ch in range(img.shape[0]):
-                    equalized_ch = cv2.equalizeHist(img.astype(np.uint8))
+                    equalized_ch = cv2.equalizeHist(img[ch])
                     equalized_ch=equalized_ch.astype(np.float32)
                     equalized_ch= (equalized_ch - equalized_ch.mean())/equalized_ch.std()
                     equalized[ch]=equalized_ch
