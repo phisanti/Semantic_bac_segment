@@ -1,5 +1,6 @@
 from typing import Optional
 from logging import Logger
+import tifffile
 import numpy as np
 import torch
 
@@ -137,3 +138,11 @@ def tensor_debugger(
             logger.log(message, level="DEBUG")
         else:
             print(message)
+
+
+def write_tensor_debug(tensor, prefix, path, id):
+    # Write input image
+    print(id)
+    tensor_img = tensor.detach().cpu().numpy()
+    tensor_img = (tensor_img * 255).astype(np.uint8)
+    tifffile.imwrite(f'{path}{prefix}_{id}.tiff', tensor_img)
