@@ -22,7 +22,7 @@ class ComposeInspect(object):
             if isinstance(data[key], torch.Tensor):
                 tensor_debugger(data[key], key + self.step)
             elif isinstance(data[key], np.ndarray):
-                x = torch.from_numpy(data[key].copy())
+                x = torch.from_numpy(data[key].copy().astype(np.float32))
                 tensor_debugger(x, key + self.step)
             else:
                 print(f"Loading key: {data[key]}")
@@ -36,6 +36,7 @@ class TIFFLoader(object):
         self.add_channel_dim = add_channel_dim
 
     def __call__(self, data):
+        data=data.copy()
         for key in self.keys:
             if isinstance(data[key], str):
                 data[key] = tifffile.imread(data[key])
@@ -57,6 +58,43 @@ class TIFFLoader(object):
                 )
 
         return data
+
+
+class HistEq(object):
+
+    def __init__(self, keys):
+        self.keys = keys
+
+    def __call__(self, data):
+        for key in self.keys:
+            img = data[key].copy()
+            img=self.to8bit(img)
+
+            if img.ndim == 2:
+                equalized = cv2.equalizeHist(img)
+                equalized=equalized.astype(np.float32)
+                equalized= (equalized - equalized.mean())/equalized.std()
+            elif img.ndim == 3:
+                equalized=np.zeros_like(img).astype(np.float32)
+                for ch in range(img.shape[0]):
+                    equalized_ch = cv2.equalizeHist(img.astype(np.uint8))
+                    equalized_ch=equalized_ch.astype(np.float32)
+                    equalized_ch= (equalized_ch - equalized_ch.mean())/equalized_ch.std()
+                    equalized[ch]=equalized_ch
+            else:
+                raise NotImplementedError(
+                    "Equalisation for 3D images or batches is not implemented yet."
+                )
+            data[key] = equalized
+        return data
+
+    def to8bit(self, image):
+
+        normalized_image = (image - np.min(image)) / (np.max(image) - np.min(image))        
+        scaled_image = normalized_image * 255        
+        uint8_image = scaled_image.astype(np.uint8)
+        
+        return uint8_image
 
 
 class ClearBackgroundTransform(object):

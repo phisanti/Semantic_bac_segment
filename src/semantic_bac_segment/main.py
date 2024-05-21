@@ -35,6 +35,7 @@ from semantic_bac_segment.transforms import (
     TIFFLoader,
     ClearBackgroundTransform,
     NormalizePercentileTransform,
+    HistEq,
     Ensure4D,
     ComposeInspect,
 )
@@ -61,7 +62,9 @@ def main():
             ),  # If running on 2D images, change to True
             ClearBackgroundTransform(
                 keys=["image"], sigma_r=25, method="divide", convert_32=True
-            )
+            ),
+            HistEq(keys=["image"]),
+
         ]
     )
 
@@ -74,14 +77,14 @@ def main():
             RandGaussianSmoothd(
                 keys=["image"], prob=0.5, sigma_x=(0.1, 1.1), sigma_y=(0.1, 1.1)
             ),
-            NormalizePercentileTransform(keys=["image"], pmax=95),
+            #NormalizePercentileTransform(keys=["image"], pmax=95),
             ScaleIntensityd(keys=["label"]),
             ToTensord(keys=["image", "label"]),
         ]
     )
     patch_val_trans = Compose(
         [
-            NormalizePercentileTransform(keys=["image"], pmax=95),
+            #NormalizePercentileTransform(keys=["image"], pmax=95),
             ScaleIntensityd(keys=["label"]),
             ToTensord(keys=["image", "label"]),
         ]
