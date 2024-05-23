@@ -61,7 +61,7 @@ def main():
                 keys=["label"], add_channel_dim=configs.trainer_params["binary_segmentation"]
             ),  # If running on 2D images, change to True
             ClearBackgroundTransform(
-                keys=["image"], sigma_r=25, method="divide", convert_32=True
+                keys=["image"], sigma_r=100, method="divide", convert_32=True
             ),
             HistEq(keys=["image"]),
 
@@ -77,7 +77,7 @@ def main():
             RandGaussianSmoothd(
                 keys=["image"], prob=0.5, sigma_x=(0.1, 1.1), sigma_y=(0.1, 1.1)
             ),
-            #NormalizePercentileTransform(keys=["image"], pmax=95),
+            NormalizePercentileTransform(keys=["image"], pmax=99),
             ScaleIntensityd(keys=["label"]),
             ToTensord(keys=["image", "label"]),
         ]
@@ -101,7 +101,8 @@ def main():
     )
     train_patch_dataset, val_patch_dataset = dataset_creator.create_patches(
         num_samples=configs.dataset_params["n_patches"],
-        roi_size=(256, 256),
+        roi_size=(configs.dataset_params["input_size"], 
+                  configs.dataset_params["input_size"]),
         train_transforms=patch_train_trans,
         val_transforms=patch_val_trans,
     )
@@ -158,7 +159,7 @@ def main():
                 loss_function,
                 metrics,
                 num_epochs,
-                "./results",
+                configs.trainer_params["model_save"],
                 model_i["model_name"],
                 model_i["model_args"],
             )
