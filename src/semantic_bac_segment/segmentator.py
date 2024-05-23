@@ -4,8 +4,9 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import gc
-from typing import Any
 import numpy as np
+import cv2
+from typing import Any, Tuple, Optional
 from semantic_bac_segment.pre_processing import ImageAdapter
 from semantic_bac_segment.utils import normalize_percentile, get_device, empty_gpu_cache
 from monai.inferers import SlidingWindowInferer
@@ -26,6 +27,7 @@ class Segmentator:
         model_graph: torch.nn.Module,
         patch_size: int,
         overlap_ratio: float,
+        scale_method='range01',
         half_precision: bool = False,
     ) -> None:
         """
@@ -36,6 +38,7 @@ class Segmentator:
             model_graph (torch.nn.Module): The model architecture.
             patch_size (int): The size of the patches for sliding window inference.
             overlap_ratio (float): The overlap ratio between patches for sliding window inference.
+            scale_method (range01 or eq-centered): The method for image scaling before inference.
             half_precision (bool, optional): Whether to use half-precision (FP16) for inference. Defaults to False.
         """
 
@@ -50,6 +53,7 @@ class Segmentator:
         self.model = self.get_model(model_path, self.device, model_graph=model_graph)
         self.patch_size = patch_size
         self.overlap_ratio = overlap_ratio
+        self.scale_method = scale_method
         self.model.eval()
         self.half_precision = half_precision
         if self.half_precision:
@@ -65,6 +69,8 @@ class Segmentator:
 
         Args:
             image (numpy.ndarray): The input image or image stack.
+            is_3D (bool): For the analysis of 3D images where the [D, H, W]
+            sigmoid (bool): Apply sigmoid trasnform to the output.
             **kwargs: Additional keyword arguments to pass to the SlidingWindowInferer.
 
         Returns:
@@ -72,9 +78,13 @@ class Segmentator:
         """
 
         # Prepare image
-        original_shape = image.ndim
-        image = self.ensure_4d(image, is_3D)
-        image = self.normalize_percentile_batch(image)
+        image, added_dim_index  = self.ensure_4d(image, is_3D)
+
+        if self.scale_method == 'range01':
+            image = self.normalize_percentile_batch(image)
+        elif self.scale_method == 'eq-centered': 
+            image = self.eq_scale(image)
+
         img_tensor = torch.from_numpy(image).to(self.device)
         if self.half_precision:
             img_tensor = img_tensor.half()  # Convert input to half-precision
@@ -88,16 +98,17 @@ class Segmentator:
 
         with torch.no_grad():
             output_mask = inferer(img_tensor, self.model)
-
+            if sigmoid:
+                output_mask = torch.sigmoid(output_mask)
             output_mask = output_mask.cpu().numpy()
+
+        if added_dim_index is not None:
+            output_mask = np.squeeze(output_mask, axis=added_dim_index)
 
         # Free up tensors
         del img_tensor, image
         gc.collect()
         empty_gpu_cache(self.device)
-
-        if sigmoid:
-            output_mask = self.sigmoid(output_mask)
 
         return output_mask  
 
@@ -149,7 +160,7 @@ class Segmentator:
         except Exception as e:
             raise Exception(f"Unexpected error occurred: {str(e)}")
 
-    def ensure_4d(self, img: np.ndarray, is_3D: bool) -> np.ndarray:
+    def ensure_4d(self, img: np.ndarray, is_3D: bool) -> Tuple[np.ndarray, Optional[Tuple[int, int]]]:
         """
         Ensures that the input image has 4 dimensions (batch, channel, height, width).
         This is the standard format expected by PyTorch models.
@@ -159,18 +170,21 @@ class Segmentator:
             is_3D (bool): Wether the image is a 3D volume or a 2D image.
 
         Returns:
-            numpy.ndarray: The image with 4 dimensions.
+        Tuple[numpy.ndarray, Optional[Tuple[int, int]]]: A tuple containing the image with 4 dimensions and a tuple of the indexes of the added dimensions (or None if no dimensions were added).
         """
+        added_dim_indexes = None
         if img.ndim == 2:
             # Add channel and batch dimensions if the array is 2D
             img = np.expand_dims(img, axis=(0, 1))
+            added_dim_indexes = (0, 1)
         elif img.ndim == 3 and is_3D:
             # Add a channel dimension if the array is multi-stack
             img = np.expand_dims(img, axis=0)
+            added_dim_indexes = (0, )
         elif img.ndim == 3 and not is_3D:
             # Add a batch dimension if the array is multi-channel
             img = np.expand_dims(img, axis=1)
-
+            added_dim_indexes = (1, )
         elif img.ndim == 4:
             # No modification needed if the array is already 4D
             pass
@@ -179,7 +193,7 @@ class Segmentator:
                 f"Unsupported array dimensions: {img.ndim}, current shape is {img.shape}"
             )
 
-        return img
+        return img, added_dim_indexes
 
     @staticmethod
     def sigmoid(x):
@@ -220,3 +234,25 @@ class Segmentator:
         images = images.astype(dtype, copy=False)
         
         return images
+    
+    def eq_scale(self, img):
+
+        img=self.to8bit(img)
+
+        equalized=np.zeros_like(img).astype(np.float32)
+        for btx in range(img.shape[0]):
+            for ch in range(img.shape[1]):
+                equalized_ch = cv2.equalizeHist(img[btx, ch])
+                equalized_ch=equalized_ch.astype(np.float32)
+                equalized_ch= (equalized_ch - equalized_ch.mean())/equalized_ch.std()
+                equalized[btx, ch]=equalized_ch
+        
+        return  equalized
+
+    def to8bit(self, image):
+
+        normalized_image = (image - np.min(image)) / (np.max(image) - np.min(image))        
+        scaled_image = normalized_image * 255        
+        uint8_image = scaled_image.astype(np.uint8)
+        
+        return uint8_image
