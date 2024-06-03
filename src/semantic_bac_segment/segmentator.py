@@ -38,7 +38,7 @@ class Segmentator:
             model_graph (torch.nn.Module): The model architecture.
             patch_size (int): The size of the patches for sliding window inference.
             overlap_ratio (float): The overlap ratio between patches for sliding window inference.
-            scale_method (range01 or eq-centered): The method for image scaling before inference.
+            scale_method (range01, eq-centered or none): The method for image scaling before inference.
             half_precision (bool, optional): Whether to use half-precision (FP16) for inference. Defaults to False.
         """
 
@@ -61,7 +61,7 @@ class Segmentator:
         else:
             self.model.float()
 
-    def predict(self, image: np.ndarray, is_3D: bool=False, sigmoid: bool=True, **kwargs: Any) -> np.ndarray:
+    def predict(self, image: np.ndarray, is_3D: bool=False, scale_method: str=None, sigmoid: bool=True, **kwargs: Any) -> np.ndarray:
         """
         Predicts the segmentation mask for the given image. It can handle 2D images or a stack of 2D images.
         This method connects the model with the monai SlidingWindowInferer to perform inference on patches of the input image.
@@ -70,6 +70,7 @@ class Segmentator:
         Args:
             image (numpy.ndarray): The input image or image stack.
             is_3D (bool): For the analysis of 3D images where the [D, H, W]
+            scale_method (str): The method for image scaling before inference. This overrides the default scale method.
             sigmoid (bool): Apply sigmoid trasnform to the output.
             **kwargs: Additional keyword arguments to pass to the SlidingWindowInferer.
 
@@ -80,10 +81,16 @@ class Segmentator:
         # Prepare image
         image, added_dim_index  = self.ensure_4d(image, is_3D)
 
-        if self.scale_method == 'range01':
+        if scale_method is None:
+            scale_method = self.scale_method
+        if scale_method == 'range01':
             image = self.normalize_percentile_batch(image)
-        elif self.scale_method == 'eq-centered': 
+        elif scale_method == 'eq-centered': 
             image = self.eq_scale(image)
+        elif scale_method == 'none':
+            pass
+        else:
+            raise ValueError(f"Unsupported scale method: {self.scale_method}")
 
         img_tensor = torch.from_numpy(image).to(self.device)
         if self.half_precision:
