@@ -140,7 +140,13 @@ def main():
     # 6. Iterate over models for training
     for model_i in network_arch:
         try:
-            m = model_loader(model_i, device)
+            weights_path = model_i.get('weights', None)
+            if weights_path:
+                trainlogger.log(f"Loading pre-trained weights from: {weights_path}", level="INFO")
+            else:
+                trainlogger.log("No pre-trained weights specified. Starting with random initialization.", level="INFO")
+
+            m = model_loader(model_i, device, weights=weights_path)
             torch.compile(m)
             optimizer = torch.optim.Adam(
                 m.parameters(), lr=configs.optimizer_params["learning_rate"]
