@@ -45,7 +45,18 @@ from semantic_bac_segment.model_loader import model_loader
 # Read configs
 def main():
     # 1. Read configs and set basic
-    c_reader = ConfReader("./train_configs.yaml")
+
+    if len(sys.argv) != 2:
+        raise ValueError("Incorrect number of arguments. Usage: python main.py <path_to_train_configs.yml>")
+
+    config_path = sys.argv[1]
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}. Please provide a valid path to the train_configs.yml file.")
+
+    if not config_path.endswith(('.yml', '.yaml')):
+        raise ValueError("Invalid file format. Please provide a YAML file (.yml or .yaml extension).")
+
+    c_reader = ConfReader(config_path)
     configs = c_reader.opt
     device = get_device()
     debugging = True
