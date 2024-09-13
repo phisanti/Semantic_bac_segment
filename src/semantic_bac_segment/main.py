@@ -18,6 +18,7 @@ from monai.transforms import (
 )
 from monai.losses import DiceLoss as monai_dice
 from monai.metrics import DiceMetric, compute_iou
+from semantic_bac_segment.schedulerfactory import SchedulerFactory
 from semantic_bac_segment.trainlogger import TrainLogger
 from semantic_bac_segment.confreader import ConfReader
 from semantic_bac_segment.utils import get_device, tensor_debugger
@@ -61,6 +62,7 @@ def main():
     device = get_device()
     debugging = True
     log_level = "DEBUG" if debugging else "INFO"
+    sample_images = configs.dataset_params.get("sample_size", None)
     trainlogger = TrainLogger("MonaiTrainer", level=log_level)
 
     # 2. Compose data transformations
@@ -70,12 +72,7 @@ def main():
             TIFFLoader(keys=["image"]),
             TIFFLoader(
                 keys=["label"], add_channel_dim=configs.trainer_params["binary_segmentation"]
-            ),  # If running on 2D images, change to True
-            ClearBackgroundTransform(
-                keys=["image"], sigma_r=100, method="divide", convert_32=True
-            ),
-            HistEq(keys=["image"]),
-
+            ),  
         ]
     )
 
@@ -88,14 +85,11 @@ def main():
             RandGaussianSmoothd(
                 keys=["image"], prob=0.5, sigma_x=(0.1, 1.1), sigma_y=(0.1, 1.1)
             ),
-            NormalizePercentileTransform(keys=["image"], pmax=99),
-            ScaleIntensityd(keys=["label"]),
             ToTensord(keys=["image", "label"]),
         ]
     )
     patch_val_trans = Compose(
         [
-            #NormalizePercentileTransform(keys=["image"], pmax=95),
             ScaleIntensityd(keys=["label"]),
             ToTensord(keys=["image", "label"]),
         ]
@@ -121,12 +115,11 @@ def main():
     # 4. Get loss and metrics
     loss_function = DiceLoss(is_sigmoid=True)
     metrics = {
-        #"MaxDice": MaxDiceLoss(is_sigmoid=True, include_background=False),
-        #"Dice": MultiClassDiceLoss(is_sigmoid=True),
+        "diceloss": DiceLoss(is_sigmoid=True),
         "Monai_diceloss": monai_dice(to_onehot_y=False, sigmoid=False),
-        #"CrossEntropy": MultiClassWeightedBinaryCrossEntropy(
-        #    is_sigmoid=True
-        #),
+        "CrossEntropy": MultiClassWeightedBinaryCrossEntropy(
+            is_sigmoid=True
+        ),
         "Cross_entropy_pytorch": CrossEntropyLoss(),
         'Focal_loss' : FocalLoss(is_sigmoid=True)
     }
@@ -151,12 +144,16 @@ def main():
             optimizer = torch.optim.Adam(
                 m.parameters(), lr=configs.optimizer_params["learning_rate"]
             )
-            scheduler = torch.optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=configs.optimizer_params["step_size"],
-                gamma=configs.optimizer_params["gamma"],
+            optimizer = torch.optim.Adam(
+                m.parameters(), 
+                lr=configs.optimizer_params["learning_rate"],
+                betas=(0.9, 0.9),  # β1 and β2
             )
-
+            scheduler = SchedulerFactory.create_scheduler(
+                optimizer,
+                configs.optimizer_params.get("scheduler", {}),
+                num_epochs
+            )
             trainer = MonaiTrainer(
                 m,
                 train_patch_dataset,
@@ -167,10 +164,12 @@ def main():
                 sigmoid_transform=True,
                 logger=trainlogger,
                 debugging=configs.trainer_params["debugging"],
+                nsamples=sample_images,
+                accumulation_steps =configs.trainer_params["accumulation_steps"] 
             )
             trainer.set_early_stop(patience=configs.trainer_params["early_stop_patiente"])
             trainer.logger.log(
-                f"Training on {device} for {num_epochs} epochs", level="INFO"
+                f"Training on {device} for {num_epochs} epochs", level=log_level
             )
             trainer.train(
                 loss_function,

@@ -9,6 +9,8 @@ from semantic_bac_segment.loss_functions import DiceLoss
 from monai.metrics import DiceMetric
 from semantic_bac_segment.utils import tensor_debugger, empty_gpu_cache
 from semantic_bac_segment.trainlogger import TrainLogger
+from torch.utils.data import Subset
+import random
 from tqdm.auto import tqdm
 
 
@@ -39,6 +41,8 @@ class MonaiTrainer:
         sigmoid_transform: bool,
         logger: TrainLogger = TrainLogger("MonaiTrainer", level="INFO"),
         debugging: bool = False,
+        nsamples: int = None,
+        accumulation_steps: int = 1
     ) -> None:
         self.model = model
         self.train_dataset = train_dataset
@@ -48,9 +52,16 @@ class MonaiTrainer:
         self.device = device
         self.debugging = debugging
         self.logger = logger
+        self.metrics = {}
         self.check_early_stop = False
         self.stop_training = False
         self.sigmoid_transform = sigmoid_transform
+        self.val_ratio = len(self.val_dataset) / (len(self.train_dataset) + len(self.val_dataset))
+        self.accumulation_steps = accumulation_steps
+        if nsamples is None or nsamples == 'None' or nsamples == 0:
+            self.nsamples = len(self.train_dataset)
+        else:
+            self.nsamples = nsamples
 
     def set_early_stop(self, patience=5):
         """
@@ -94,11 +105,11 @@ class MonaiTrainer:
         for epoch in range(num_epochs):
             self.logger.log(f"Iteration {epoch}")
             train_loss, train_metrics, _ = self.run_epoch(
-                self.train_dataset, is_train=True
+                self.train_dataset, is_train=True, nsamples=self.nsamples
             )
             self.scheduler.step()
 
-            val_loss, val_metrics, _ = self.run_epoch(self.val_dataset, is_train=False)
+            val_loss, val_metrics, _ = self.run_epoch(self.val_dataset, is_train=False, nsamples=int(self.nsamples * self.val_ratio))
 
             self.logger.log(
                 f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
@@ -143,7 +154,9 @@ class MonaiTrainer:
         self.writer.close()
 
     def run_epoch(
-        self, dataset: torch.utils.data.Dataset, is_train: bool = True
+        self, dataset: torch.utils.data.Dataset, 
+        is_train: bool = True,
+        nsamples: int = 1
     ) -> Tuple[float, Dict[str, float], float]:
         """
         Run a single epoch of training or validation.
@@ -157,47 +170,66 @@ class MonaiTrainer:
         """
 
         epoch_loss = 0
-        epoch_dice = 0
         epoch_metrics = {metric_name: 0 for metric_name in self.metrics.keys()}
         inference_times = []
         tic = time.time()
         self.model.train() if is_train else self.model.eval()
+        
+        if self.nsamples == len(dataset):
+            sampled_dataset = dataset
+        else:
+            indices = random.sample(range(len(dataset)), nsamples)
+            sampled_dataset = Subset(dataset, indices)
 
-        for batch_data in dataset:
+        if is_train:
+            self.optimizer.zero_grad()
+        for i, batch_data in enumerate(sampled_dataset):
             inputs, labels = (
                 batch_data["image"].to(self.device),
                 batch_data["label"].to(self.device),
             )
 
-            if is_train:
-                self.optimizer.zero_grad()
-
             if self.debugging:
-                tensor_debugger(inputs, "inputs", self.logger)
-                tensor_debugger(labels, "labels", self.logger)
+                tensor_debugger(inputs, "inputs")
+                tensor_debugger(labels, "labels")
 
+            # For the EverFocus models, we train on the noise structure because that normalises the images
             with torch.set_grad_enabled(is_train):
                 outputs = self.model(inputs)
                 if self.sigmoid_transform:
-                    outputs = torch.sigmoid(outputs)
+                   outputs = torch.sigmoid(outputs)
                 if self.debugging:
                     tensor_debugger(outputs, "outputs", self.logger)
 
+                #cleaned = inputs - outputs 
                 loss = self.loss_function(outputs, labels)
-
+                
+            radom_int = np.random.randint(0, 100)
+            if not is_train and radom_int == 0 and self.debugging:
+                # Write masks and source to tiff to check prediction
+                import tifffile
+                tifffile.imwrite('./data/inspection_images/inputs.tiff', inputs.cpu().numpy()[:,0])
+                tifffile.imwrite('./data/inspection_images/mask.tiff', labels.cpu().numpy()[:,0])
+                tifffile.imwrite('./data/inspection_images/outputs.tiff', outputs.cpu().numpy()[:,0])
+                tifffile.imwrite('./data/inspection_images/loss.tiff', labels.cpu().numpy()[:,0] - outputs.cpu().numpy()[:,0])
             if is_train:
+                loss = loss / self.accumulation_steps
                 loss.backward()
-                self.optimizer.step()
+                if (i + 1) % self.accumulation_steps == 0:
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
+                reported_loss = loss.item() * self.accumulation_steps  # Adjust back for reporting
+            else:
+                reported_loss = loss.item()
 
-            epoch_loss += loss.item()
+            epoch_loss += reported_loss
             for metric_name, metric_fn in self.metrics.items():
-                epoch_metrics[metric_name] += metric_fn(outputs, labels) / len(dataset)
+                epoch_metrics[metric_name] += metric_fn(outputs, labels) / len(sampled_dataset)
 
             inference_times.append(time.time() - tic)
             tic = time.time()
 
-        epoch_loss /= len(dataset)
-        epoch_dice /= len(dataset)
+        epoch_loss /= len(sampled_dataset)
         inference_time = np.mean(inference_times)
         empty_gpu_cache(self.device)
 
