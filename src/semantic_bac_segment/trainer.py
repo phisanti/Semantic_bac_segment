@@ -174,8 +174,7 @@ class MonaiTrainer:
         inference_times = []
         tic = time.time()
         self.model.train() if is_train else self.model.eval()
-        
-        if self.nsamples == len(dataset):
+        if nsamples == len(dataset) or is_train == False:
             sampled_dataset = dataset
         else:
             indices = random.sample(range(len(dataset)), nsamples)
@@ -190,8 +189,8 @@ class MonaiTrainer:
             )
 
             if self.debugging:
-                tensor_debugger(inputs, "inputs")
-                tensor_debugger(labels, "labels")
+                tensor_debugger(inputs, "inputs", self.logger)
+                tensor_debugger(labels, "labels", self.logger)
 
             # For the EverFocus models, we train on the noise structure because that normalises the images
             with torch.set_grad_enabled(is_train):
@@ -204,7 +203,7 @@ class MonaiTrainer:
                 #cleaned = inputs - outputs 
                 loss = self.loss_function(outputs, labels)
                 
-            radom_int = np.random.randint(0, 100)
+            radom_int = np.random.randint(0, 10)
             if not is_train and radom_int == 0 and self.debugging:
                 # Write masks and source to tiff to check prediction
                 import tifffile

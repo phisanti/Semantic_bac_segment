@@ -232,3 +232,35 @@ class MultiResUnet(torch.nn.Module):
 		out =  self.conv_final(x_multires9)
 		
 		return out
+
+if __name__ == "__main__":
+    # Define model parameters
+    input_channels = 1
+    num_classes = 1
+    alpha = 1.67
+
+    # Create the model
+    model = MultiResUnet(input_channels, num_classes, alpha)
+
+    # Create a random input tensor
+    input_tensor = torch.randn(1, 1, 32, 32)
+
+    # Run the model
+    output = model(input_tensor)
+
+    # Print the output shape
+    print(f"Input shape: {input_tensor.shape}")
+    print(f"Output shape: {output.shape}")
+
+    # Additional tests
+    assert output.shape == (1, num_classes + 1, 32, 32), f"Expected output shape (1, {num_classes + 1}, 32, 32), but got {output.shape}"
+    print("Output shape test passed!")
+
+    # Test with different input sizes
+    for size in [64, 128, 256]:
+        input_tensor = torch.randn(1, 1, size, size)
+        output = model(input_tensor)
+        assert output.shape == (1, num_classes + 1, size, size), f"Failed for input size {size}x{size}"
+        print(f"Test passed for input size {size}x{size}")
+
+    print("All tests passed successfully!")

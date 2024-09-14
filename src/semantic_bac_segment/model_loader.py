@@ -2,6 +2,7 @@ import torch
 from typing import Dict, Optional, Union
 from semantic_bac_segment.models.pytorch_cnnunet import Unet as atomai_unet
 from semantic_bac_segment.models.multiscaleunet import MultiResUnet
+from semantic_bac_segment.models.flexmultiscaleunet import FlexMultiScaleUNet
 from semantic_bac_segment.models.pytorch_altmodel import UNET as base_unet
 from semantic_bac_segment.models.pytorch_attention import AttentionUNet
 from monai.networks.nets import UNet as MonaiUnet
@@ -48,8 +49,10 @@ def model_loader(
     # Create the model instance based on the model name
     if model_type == "MonaiUnet":
         model = MonaiUnet(**model_args).to(device)
-    if model_type == "MultiResUnet":
+    elif model_type == "MultiResUnet":
         model = MultiResUnet(**model_args).to(device)
+    elif model_type == "FlexMultiScaleUNet":
+        model = FlexMultiScaleUNet(**model_args).to(device)
     elif model_type == "MonaiAttentionUNet":
         model = MonaiAttentionUNet(**model_args).to(device)
     elif model_type == "UNETR":
