@@ -141,14 +141,9 @@ def main():
 
             m = model_loader(model_i, device, weights=weights_path)
             torch.compile(m)
-            optimizer = torch.optim.Adam(
-                m.parameters(), lr=configs.optimizer_params["learning_rate"]
-            )
-            optimizer = torch.optim.Adam(
-                m.parameters(), 
-                lr=configs.optimizer_params["learning_rate"],
-                betas=(0.9, 0.9),  # β1 and β2
-            )
+
+            optimizer = torch.optim.AdamW(m.parameters(), lr=configs.optimizer_params["learning_rate"], weight_decay=configs.optimizer_params.get('weight_decay', 1e-5))
+
             scheduler = SchedulerFactory.create_scheduler(
                 optimizer,
                 configs.optimizer_params.get("scheduler", {}),
