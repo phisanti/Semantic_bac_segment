@@ -106,13 +106,15 @@ class BacSegmentDatasetCreator:
         val_ratio (float, optional): Ratio of samples to use for validation. Defaults to 0.3.
     """
 
-    def __init__(self, source_folder: str, mask_folder: str, val_ratio: float = 0.3):
+    def __init__(self, source_folder: str, mask_folder: str, val_ratio: float = 0.3, batch_size : int = None):
         self.source_folder = source_folder
         self.mask_folder = mask_folder
         assert (
             0 <= val_ratio <= 1
         ), f"Validation ratio must be between 0 and 1, but got {val_ratio}"
         self.val_ratio = val_ratio
+        self.batch_size = batch_size
+
 
     def create_datasets(
         self, train_transform, val_transform
@@ -142,6 +144,22 @@ class BacSegmentDatasetCreator:
 
         return self.train_dataset, self.val_dataset
 
+    def create_dataloaders(self, **kwargs) -> Tuple[DataLoader, DataLoader]:
+        """
+        Creates and returns the training and validation DataLoaders.
+        This method initializes DataLoader objects for both the training and validation datasets
+        using the specified batch size. The training DataLoader shuffles the data, while the 
+        validation DataLoader does not.
+        Returns:
+            Tuple[DataLoader, DataLoader]: A tuple containing the training DataLoader and the 
+            validation DataLoader.
+        """
+        
+        train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, **kwargs)
+        val_loader = DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, **kwargs)
+
+        return train_loader, val_loader
+    
     def create_patches(
         self,
         roi_size: Tuple[int, int] = (256, 256),
