@@ -2,13 +2,14 @@ import os
 import torch
 import time
 import json
+import traceback
 import numpy as np
 from typing import Dict, List, Tuple, Any, Callable
 from torch.utils.tensorboard import SummaryWriter
-from semantic_bac_segment.loss_functions import DiceLoss
-from monai.metrics import DiceMetric
 from semantic_bac_segment.utils import tensor_debugger, empty_gpu_cache
 from semantic_bac_segment.trainlogger import TrainLogger
+from semantic_bac_segment.schedulerfactory import SchedulerFactory
+from semantic_bac_segment.model_loader import model_loader, ModelRegistry
 from torch.utils.data import Subset
 import random
 from tqdm.auto import tqdm
@@ -152,6 +153,81 @@ class MonaiTrainer:
         }
         self.save_model(model_name, model_args, metrics_output, best=False)
         self.writer.close()
+
+    def multi_train(
+        self,
+        network_architectures: List[Dict],
+        criterion: torch.nn.Module,
+        metrics: Dict[str, Callable],
+        num_epochs: int,
+        saving_folder: str,
+        optimizer_params: Dict,
+        scheduler_factory: SchedulerFactory,
+        model_registry: ModelRegistry = ModelRegistry()
+        ) -> None:
+        """
+        Train multiple model architectures sequentially.
+
+        Args:
+            network_architectures (List[Dict]): List of architecture configurations that will be passed to the ModelRegistry to build the model, each containing:
+                - model_name: Name of the model
+                - model_args: Model initialization parameters
+                - weights: Optional path to pretrained weights
+            criterion (torch.nn.Module): Loss function for training
+            metrics (Dict[str, Callable]): Dictionary of metric functions for evaluation
+            num_epochs (int): Number of epochs to train each architecture
+            saving_folder (str): Directory to save model checkpoints and configurations
+            optimizer_params (Dict): Parameters for the AdamW optimizer including:
+                - learning_rate: Initial learning rate
+                - weight_decay: Weight decay factor
+                - scheduler: Optional scheduler configuration
+            scheduler_factory (SchedulerFactory): Factory class for creating learning rate schedulers
+            model_registry (ModelRegistry): Registry containing available model architectures
+
+        Each architecture is trained independently with its own optimizer and scheduler.
+        Training results and errors are logged using the trainer's logger.
+        """
+        for arch in network_architectures:
+            # Load model, optim and scheduler
+            model = model_loader(
+                arch, 
+                self.device, 
+                model_registry=model_registry,
+                weights=arch.get('weights')
+            )
+            torch.compile(model)
+            optimizer = torch.optim.AdamW(
+                model.parameters(), 
+                lr=optimizer_params["learning_rate"], 
+                weight_decay=optimizer_params.get('weight_decay', 1e-5)
+            )
+            scheduler = scheduler_factory.create_scheduler(
+                optimizer,
+                optimizer_params.get("scheduler", {}),
+                num_epochs
+            )
+            
+            # Pass to self
+            self.model = model
+            self.optimizer = optimizer 
+            self.scheduler = scheduler
+            
+            # Train
+            try:
+                self.train(
+                    criterion,
+                    metrics, 
+                    num_epochs,
+                    saving_folder,
+                    arch["model_name"],
+                    arch["model_args"]
+                )
+            except Exception as e:
+                self.logger.log(
+                    f"Error training {arch['model_name']}: {str(e)}\n{traceback.format_exc()}", 
+                    level="ERROR"
+                )
+
 
     def run_epoch(
         self, dataset: torch.utils.data.Dataset, 

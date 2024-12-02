@@ -40,7 +40,7 @@ from semantic_bac_segment.transforms import (
     Ensure4D,
     ComposeInspect,
 )
-from semantic_bac_segment.model_loader import model_loader
+from semantic_bac_segment.model_loader import ModelRegistry
 
 
 # Read configs
@@ -130,57 +130,31 @@ def main():
         network_arch = json.load(file)
         
     trainlogger.log(c_reader.pretty_print(configs), level="INFO")
-    # 6. Iterate over models for training
-    for model_i in network_arch:
-        try:
-            weights_path = model_i.get('weights', None)
-            if weights_path:
-                trainlogger.log(f"Loading pre-trained weights from: {weights_path}", level="INFO")
-            else:
-                trainlogger.log("No pre-trained weights specified. Starting with random initialization.", level="INFO")
-
-            m = model_loader(model_i, device, weights=weights_path)
-            torch.compile(m)
-
-            optimizer = torch.optim.AdamW(m.parameters(), lr=configs.optimizer_params["learning_rate"], weight_decay=configs.optimizer_params.get('weight_decay', 1e-5))
-
-            scheduler = SchedulerFactory.create_scheduler(
-                optimizer,
-                configs.optimizer_params.get("scheduler", {}),
-                num_epochs
-            )
-            trainer = MonaiTrainer(
-                m,
-                train_patch_dataset,
-                val_patch_dataset,
-                optimizer,
-                scheduler,
-                device,
-                sigmoid_transform=True,
-                logger=trainlogger,
-                debugging=configs.trainer_params["debugging"],
-                nsamples=sample_images,
-                accumulation_steps =configs.trainer_params["accumulation_steps"] 
-            )
-            trainer.set_early_stop(patience=configs.trainer_params["early_stop_patiente"])
-            trainer.logger.log(
-                f"Training on {device} for {num_epochs} epochs", level=log_level
-            )
-            trainer.train(
-                loss_function,
-                metrics,
-                num_epochs,
-                configs.trainer_params["model_save"],
-                model_i["model_name"],
-                model_i["model_args"],
-            )
-
-        except Exception as e:
-            error_message = f"An error occurred while training model {model_i['model_name']}: {str(e)}\n"
-            error_message += f"Traceback: {traceback.format_exc()}\n"
-            trainer.trainlogger.log(
-                error_message, level="ERROR"
-            )  # Use the logger instance directly
+    trainer = MonaiTrainer(
+        None,  # Model will be set in train_multiple_architectures
+        train_patch_dataset,
+        val_patch_dataset,
+        None,  # Optimizer will be set in train_multiple_architectures  
+        None,  # Scheduler will be set in train_multiple_architectures
+        device,
+        sigmoid_transform=True,
+        logger=trainlogger,
+        debugging=configs.trainer_params["debugging"],
+        nsamples=sample_images,
+        accumulation_steps=configs.trainer_params["accumulation_steps"]
+    )
+    trainer.set_early_stop(patience=configs.trainer_params["early_stop_patiente"])
+    trainer.logger.log(f"Training on {device} for {num_epochs} epochs", level=log_level)
+    trainer.multi_train(
+        network_arch,
+        loss_function,
+        metrics,
+        num_epochs, 
+        configs.trainer_params["model_save"],
+        configs.optimizer_params,
+        SchedulerFactory,
+        model_registry = ModelRegistry()
+        )
 
 
 if __name__ == "__main__":

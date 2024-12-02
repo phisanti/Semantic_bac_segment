@@ -1,5 +1,5 @@
 import torch
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, Type, Mapping
 from semantic_bac_segment.models.pytorch_cnnunet import Unet as atomai_unet
 from semantic_bac_segment.models.multiscaleunet import MultiResUnet
 from semantic_bac_segment.models.flexmultiscaleunet import FlexMultiScaleUNet
@@ -18,68 +18,89 @@ from monai.networks.nets import (
 )
 
 
+class ModelRegistry:
+    """A registry for storing and retrieving model architectures."""
+    
+    def __init__(self, models: Optional[Mapping[str, Type[torch.nn.Module]]] = None) -> None:
+        """
+        Initialize the model registry.
+        
+        Args:
+            models: Initial mapping of model names to model classes
+        """
+        self._models: Dict[str, Type[torch.nn.Module]] = models or {
+            "MonaiUnet": MonaiUnet,
+            "MultiResUnet": MultiResUnet,
+            "FlexMultiScaleUNet": FlexMultiScaleUNet,
+            "MonaiAttentionUNet": MonaiAttentionUNet,
+            "UNETR": UNETR,
+            "AHNet": AHNet,
+            "DenseNet169": DenseNet169,
+            "EfficientNet": EfficientNet, 
+            "DynUNet": DynUNet,
+            "SwinUNETR": SwinUNETR,
+            "BasicUNetPlusPlus": BasicUNetPlusPlus,
+            "atomai_unet": atomai_unet,
+            "base_unet": base_unet,
+            "AttentionUNet": AttentionUNet
+        }
+
+    def register(self, name: str, model_class: Type[torch.nn.Module]) -> None:
+        """
+        Register a new model architecture.
+        
+        Args:
+            name: Name identifier for the model
+            model_class: The model class to register
+        """
+        self._models[name] = model_class
+
+    def get_model(self, name: str) -> Type[torch.nn.Module]:
+        """
+        Retrieve a model class by name.
+        
+        Args:
+            name: Name of the model to retrieve
+            
+        Returns:
+            The requested model class
+            
+        Raises:
+            ValueError: If model name not found in registry
+        """
+        if name not in self._models:
+            raise ValueError(f"Unknown model: {name}")
+        return self._models[name]
+
 def model_loader(
-    network_architecture: Dict[str, Union[str, Dict]],
+    network_architecture: Dict[str, Union[str, Dict]], 
     device: torch.device,
-    weights: Optional[str] = None,
-) -> torch.nn.Module:
+    model_registry: ModelRegistry = ModelRegistry(),
+    weights: Optional[str] = None
+    ) -> torch.nn.Module:
     """
-    Loads a model based on the provided network architecture and device.
-
+    Load and initialize a model based on provided architecture specification.
+    
     Args:
-        network_architecture (Dict[str, Union[str, Dict]]): A dictionary containing the model name and model arguments.
-        device (torch.device): The device to load the model onto.
-        weights (Optional[str], optional): Path to the pre-trained weights file. Defaults to None.
-
+        network_architecture: Dictionary containing model name and arguments
+        device: Device to load model onto
+        model_registry: Registry containing available model architectures
+        weights: Optional path to pretrained weights
+        
     Returns:
-        nn.Module: The loaded model.
-
+        Initialized model on specified device
+        
     Raises:
-        ValueError: If an unknown model family is specified.
-        AssertionError: If the loaded weights do not match the model architecture.
+        ValueError: If model type not found in registry
     """
     model_name = network_architecture["model_name"]
     model_args = network_architecture["model_args"]
-
-    if "-" in model_name:
-        model_type = model_name.split("-")[0]
-    else:
-        model_type = model_name
-
-    # Create the model instance based on the model name
-    if model_type == "MonaiUnet":
-        model = MonaiUnet(**model_args).to(device)
-    elif model_type == "MultiResUnet":
-        model = MultiResUnet(**model_args).to(device)
-    elif model_type == "FlexMultiScaleUNet":
-        model = FlexMultiScaleUNet(**model_args).to(device)
-    elif model_type == "MonaiAttentionUNet":
-        model = MonaiAttentionUNet(**model_args).to(device)
-    elif model_type == "UNETR":
-        model = UNETR(**model_args).to(device)
-    elif model_type == "AHNet":
-        model = AHNet(**model_args).to(device)
-    elif model_type == "DenseNet169":
-        model = DenseNet169(**model_args).to(device)
-    elif model_type == "EfficientNet":
-        model = EfficientNet(**model_args).to(device)
-    elif model_type == "DynUNet":
-        model = DynUNet(**model_args).to(device)
-    elif model_type == "SwinUNETR":
-        model = SwinUNETR(**model_args).to(device)
-    elif model_type == "BasicUNetPlusPlus":
-        model = BasicUNetPlusPlus(**model_args).to(device)
-    elif model_type == "atomai_unet":
-        model = atomai_unet(**model_args).to(device)
-    elif model_type == "base_unet":
-        model = base_unet(**model_args).to(device)
-    elif model_type == "AttentionUNet":
-        model = AttentionUNet(**model_args).to(device)
-    else:
-        raise ValueError(f"Unknown model family: {model_type}")
+    
+    model_type = model_name.split("-")[0] if "-" in model_name else model_name
+    model_class = model_registry.get_model(model_type)
+    model = model_class(**model_args).to(device)
 
     if weights:
-        
         model.load_state_dict(torch.load(weights, map_location=device))
 
     return model
