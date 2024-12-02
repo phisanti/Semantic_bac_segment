@@ -4,7 +4,7 @@ import time
 import json
 import traceback
 import numpy as np
-from typing import Dict, List, Tuple, Any, Callable
+from typing import Dict, List, Tuple, Any, Callable, TypeVar
 from torch.utils.tensorboard import SummaryWriter
 from semantic_bac_segment.utils import tensor_debugger, empty_gpu_cache
 from semantic_bac_segment.trainlogger import TrainLogger
@@ -14,6 +14,8 @@ from torch.utils.data import Subset
 import random
 from tqdm.auto import tqdm
 
+DataContainer = TypeVar('DataContainer', torch.utils.data.Dataset, torch.utils.data.DataLoader)
+
 
 class MonaiTrainer:
     """
@@ -21,8 +23,10 @@ class MonaiTrainer:
 
     Args:
         model (torch.nn.Module): The model to be trained.
-        train_dataset (torch.utils.data.Dataset): The training dataset.
-        val_dataset (torch.utils.data.Dataset): The validation dataset.
+        train_data (Union[torch.utils.data.Dataset, torch.utils.data.DataLoader]): 
+            Training data container. Can be either a Dataset or a configured DataLoader.
+        val_data (Union[torch.utils.data.Dataset, torch.utils.data.DataLoader]): 
+            Validation data container. Can be either a Dataset or a configured DataLoader.
         optimizer (torch.optim.Optimizer): The optimizer for training.
         scheduler (torch.optim.lr_scheduler._LRScheduler): The learning rate scheduler.
         device (torch.device): The device to run the training on.
@@ -34,8 +38,8 @@ class MonaiTrainer:
     def __init__(
         self,
         model: torch.nn.Module,
-        train_dataset: torch.utils.data.Dataset,
-        val_dataset: torch.utils.data.Dataset,
+        train_data: DataContainer,
+        val_data: DataContainer,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler._LRScheduler,
         device: torch.device,
@@ -46,8 +50,8 @@ class MonaiTrainer:
         accumulation_steps: int = 1
     ) -> None:
         self.model = model
-        self.train_dataset = train_dataset
-        self.val_dataset = val_dataset
+        self.train_data = train_data
+        self.val_data = val_data
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.device = device
@@ -57,10 +61,10 @@ class MonaiTrainer:
         self.check_early_stop = False
         self.stop_training = False
         self.sigmoid_transform = sigmoid_transform
-        self.val_ratio = len(self.val_dataset) / (len(self.train_dataset) + len(self.val_dataset))
+        self.val_ratio = len(self.val_data) / (len(self.train_data) + len(self.val_data))
         self.accumulation_steps = accumulation_steps
         if nsamples is None or nsamples == 'None' or nsamples == 0:
-            self.nsamples = len(self.train_dataset)
+            self.nsamples = len(self.train_data)
         else:
             self.nsamples = nsamples
 
@@ -106,11 +110,11 @@ class MonaiTrainer:
         for epoch in range(num_epochs):
             self.logger.log(f"Iteration {epoch}")
             train_loss, train_metrics, _ = self.run_epoch(
-                self.train_dataset, is_train=True, nsamples=self.nsamples
+                self.train_data, is_train=True, nsamples=self.nsamples
             )
             self.scheduler.step()
 
-            val_loss, val_metrics, _ = self.run_epoch(self.val_dataset, is_train=False, nsamples=int(self.nsamples * self.val_ratio))
+            val_loss, val_metrics, _ = self.run_epoch(self.val_data, is_train=False, nsamples=int(self.nsamples * self.val_ratio))
 
             self.logger.log(
                 f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
