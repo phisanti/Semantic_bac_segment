@@ -6,9 +6,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import numpy as np
 import glob
-from typing import List, Tuple
+from typing import Optional, Union, Tuple, Dict, Any, List
 from torch.utils.data.dataset import Dataset
-from monai.data import Dataset, PatchDataset, DataLoader
+from monai.data import Dataset, PatchDataset, DataLoader, SmartCacheDataset
 from monai.transforms import RandSpatialCropSamplesd
 
 
@@ -98,49 +98,91 @@ class TrainSplit:
 
 class BacSegmentDatasetCreator:
     """
-    Class for creating datasets and patches for bacterial segmentation.
+    Class for creating datasets and patches for bacterial segmentation with optional subsampling
+    and smart caching capabilities.
 
     Args:
-        source_folder (str): Path to the directory containing the source images.
-        mask_folder (str): Path to the directory containing the mask images.
-        val_ratio (float, optional): Ratio of samples to use for validation. Defaults to 0.3.
+        source_folder (str): Path to the directory containing the source images
+        mask_folder (str): Path to the directory containing the mask images
+        val_ratio (float, optional): Ratio of samples to use for validation. Must be between 0 and 1. Defaults to 0.3
+        batch_size (Optional[int], optional): Batch size for data loading. Defaults to None
+        nsamples (Optional[Union[int, float]], optional): Number of samples or fraction to use. 
+            If float, must be between 0-1. If int, must be positive. Defaults to None
+        use_smart_cache (bool, optional): Whether to use MONAI's SmartCacheDataset for faster iterations. 
+            Defaults to False
     """
 
-    def __init__(self, source_folder: str, mask_folder: str, val_ratio: float = 0.3, batch_size : int = None):
+    def __init__(
+        self, 
+        source_folder: str,
+        mask_folder: str,
+        val_ratio: float = 0.3,
+        batch_size: Optional[int] = None,
+        nsamples: Optional[Union[int, float]] = None,
+        use_smart_cache: bool = False
+    ):
+        assert 0 <= val_ratio <= 1, f"Validation ratio must be between 0 and 1, got {val_ratio}"
+        if nsamples is not None and nsamples != 0:
+            if isinstance(nsamples, float):
+                assert 0 < nsamples <= 1, f"Float nsamples must be between 0 and 1, got {nsamples}"
+            else:
+                assert isinstance(nsamples, int) and nsamples > 0, f"Integer nsamples must be positive, got {nsamples}"
+
         self.source_folder = source_folder
         self.mask_folder = mask_folder
-        assert (
-            0 <= val_ratio <= 1
-        ), f"Validation ratio must be between 0 and 1, but got {val_ratio}"
         self.val_ratio = val_ratio
         self.batch_size = batch_size
+        self.nsamples = None if nsamples == 0 else nsamples
+        self.use_smart_cache = use_smart_cache
 
+    def _subsample_pairs(self, data_pairs: List[Tuple[str, str]], n_samples: Optional[Union[int, float]] = None) -> List[Tuple[str, str]]:
+        """Subsample data pairs based on nsamples parameter."""
+        if n_samples is None:
+            return data_pairs
+            
+        n_total = len(data_pairs)
+        sample_size = int(n_total * n_samples) if isinstance(n_samples, float) else min(n_samples, n_total)
+        indices = np.random.choice(n_total, sample_size, replace=False)
+        return [data_pairs[i] for i in indices]
 
     def create_datasets(
-        self, train_transform, val_transform
-    ) -> Tuple[Dataset, Dataset]:
+        self, 
+        train_transform: Any, 
+        val_transform: Any,
+        **kwargs
+        ) -> Tuple[Union[Dataset, SmartCacheDataset], Union[Dataset, SmartCacheDataset]]:
         """
         Creates training and validation datasets.
 
         Args:
             train_transform: Transformation to apply to the training dataset.
             val_transform: Transformation to apply to the validation dataset.
-
+            kwargs: Keyword arguments passed to the SmartCacheDataset monai class. Only used when use_smart_cache=True.
         Returns:
             Tuple[Dataset, Dataset]: Tuple containing the training and validation datasets.
+                
+        Raises:
+            ValueError: If kwargs are provided when use_smart_cache is False
         """
+        if kwargs and not self.use_smart_cache:
+            raise ValueError("Additional arguments can only be used with SmartCacheDataset (use_smart_cache=True)")
 
-        splitter = TrainSplit(
-            self.source_folder, self.mask_folder, val_ratio=self.val_ratio
-        )
+
+        splitter = TrainSplit(self.source_folder, self.mask_folder, val_ratio=self.val_ratio)
         splitter.get_samplepairs()
         train_pairs, val_pairs = splitter.split_samples()
+
+        # Apply subsampling
+        train_pairs = self._subsample_pairs(train_pairs, self.nsamples)
+        val_pairs = self._subsample_pairs(val_pairs, self.nsamples)
 
         train_data = [{"image": image, "label": label} for image, label in train_pairs]
         val_data = [{"image": image, "label": label} for image, label in val_pairs]
 
-        self.train_dataset = Dataset(data=train_data, transform=train_transform)
-        self.val_dataset = Dataset(data=val_data, transform=val_transform)
+        dataset_class = SmartCacheDataset if self.use_smart_cache else Dataset
+        
+        self.train_dataset = dataset_class(data=train_data, transform=train_transform, **kwargs)
+        self.val_dataset = dataset_class(data=val_data, transform=val_transform, **kwargs)
 
         return self.train_dataset, self.val_dataset
 

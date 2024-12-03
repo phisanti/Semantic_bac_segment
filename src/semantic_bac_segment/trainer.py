@@ -46,7 +46,6 @@ class MonaiTrainer:
         sigmoid_transform: bool,
         logger: TrainLogger = TrainLogger("MonaiTrainer", level="INFO"),
         debugging: bool = False,
-        nsamples: int = None,
         accumulation_steps: int = 1
     ) -> None:
         self.model = model
@@ -63,10 +62,6 @@ class MonaiTrainer:
         self.sigmoid_transform = sigmoid_transform
         self.val_ratio = len(self.val_data) / (len(self.train_data) + len(self.val_data))
         self.accumulation_steps = accumulation_steps
-        if nsamples is None or nsamples == 'None' or nsamples == 0:
-            self.nsamples = len(self.train_data)
-        else:
-            self.nsamples = nsamples
 
     def set_early_stop(self, patience=5):
         """
@@ -110,11 +105,11 @@ class MonaiTrainer:
         for epoch in range(num_epochs):
             self.logger.log(f"Iteration {epoch}")
             train_loss, train_metrics, _ = self.run_epoch(
-                self.train_data, is_train=True, nsamples=self.nsamples
+                self.train_data, is_train=True
             )
             self.scheduler.step()
 
-            val_loss, val_metrics, _ = self.run_epoch(self.val_data, is_train=False, nsamples=int(self.nsamples * self.val_ratio))
+            val_loss, val_metrics, _ = self.run_epoch(self.val_data, is_train=False)
 
             self.logger.log(
                 f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
@@ -236,7 +231,6 @@ class MonaiTrainer:
     def run_epoch(
         self, dataset: torch.utils.data.Dataset, 
         is_train: bool = True,
-        nsamples: int = 1
     ) -> Tuple[float, Dict[str, float], float]:
         """
         Run a single epoch of training or validation.
@@ -254,15 +248,10 @@ class MonaiTrainer:
         inference_times = []
         tic = time.time()
         self.model.train() if is_train else self.model.eval()
-        if nsamples == len(dataset) or is_train == False:
-            sampled_dataset = dataset
-        else:
-            indices = random.sample(range(len(dataset)), nsamples)
-            sampled_dataset = Subset(dataset, indices)
 
         if is_train:
             self.optimizer.zero_grad()
-        for i, batch_data in enumerate(sampled_dataset):
+        for i, batch_data in enumerate(dataset):
             inputs, labels = (
                 batch_data["image"].to(self.device),
                 batch_data["label"].to(self.device),
@@ -303,12 +292,12 @@ class MonaiTrainer:
 
             epoch_loss += reported_loss
             for metric_name, metric_fn in self.metrics.items():
-                epoch_metrics[metric_name] += metric_fn(outputs, labels) / len(sampled_dataset)
+                epoch_metrics[metric_name] += metric_fn(outputs, labels) / len(dataset)
 
             inference_times.append(time.time() - tic)
             tic = time.time()
 
-        epoch_loss /= len(sampled_dataset)
+        epoch_loss /= len(dataset)
         inference_time = np.mean(inference_times)
         empty_gpu_cache(self.device)
 

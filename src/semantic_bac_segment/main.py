@@ -104,6 +104,8 @@ def main():
     train_dataset, val_dataset = dataset_creator.create_datasets(
         img_transforms, img_transforms
     )
+    print(f'length train_dataset: {len(train_dataset)}')
+    print(f'length train_dataset: {len(val_dataset)}')
     train_patch_dataset, val_patch_dataset = dataset_creator.create_patches(
         num_samples=configs.dataset_params["n_patches"],
         roi_size=(configs.dataset_params["input_size"], 
@@ -140,7 +142,6 @@ def main():
         sigmoid_transform=True,
         logger=trainlogger,
         debugging=configs.trainer_params["debugging"],
-        nsamples=sample_images,
         accumulation_steps=configs.trainer_params["accumulation_steps"]
     )
     trainer.set_early_stop(patience=configs.trainer_params["early_stop_patiente"])
