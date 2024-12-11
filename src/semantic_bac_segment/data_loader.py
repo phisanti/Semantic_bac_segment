@@ -7,7 +7,6 @@ import torch
 import numpy as np
 import glob
 from typing import Optional, Union, Tuple, Dict, Any, List
-from torch.utils.data.dataset import Dataset
 from monai.data import Dataset, PatchDataset, DataLoader, SmartCacheDataset
 from monai.transforms import RandSpatialCropSamplesd
 
