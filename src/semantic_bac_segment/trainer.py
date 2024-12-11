@@ -11,11 +11,9 @@ from semantic_bac_segment.trainlogger import TrainLogger
 from semantic_bac_segment.schedulerfactory import SchedulerFactory
 from semantic_bac_segment.model_loader import model_loader, ModelRegistry
 from torch.utils.data import Subset
-import random
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 DataContainer = TypeVar('DataContainer', torch.utils.data.Dataset, torch.utils.data.DataLoader)
-
 
 class MonaiTrainer:
     """
@@ -49,8 +47,7 @@ class MonaiTrainer:
         accumulation_steps: int = 1
     ) -> None:
         self.model = model
-        self.train_data = train_data
-        self.val_data = val_data
+        self.dataloaders = {'train': train_data, 'val': val_data}
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.device = device
@@ -60,8 +57,7 @@ class MonaiTrainer:
         self.check_early_stop = False
         self.stop_training = False
         self.sigmoid_transform = sigmoid_transform
-        self.val_ratio = len(self.val_data) / (len(self.train_data) + len(self.val_data))
-        self.accumulation_steps = accumulation_steps
+        self.accumulation_steps = accumulation_steps# For the moment, I will deprecate this parameter as it is not required for most trainings and just slows down the training process
 
     def set_early_stop(self, patience=5):
         """
@@ -104,12 +100,10 @@ class MonaiTrainer:
 
         for epoch in range(num_epochs):
             self.logger.log(f"Iteration {epoch}")
-            train_loss, train_metrics, _ = self.run_epoch(
-                self.train_data, is_train=True
-            )
+            train_loss, train_metrics = self.run_epoch(is_train=True)
             self.scheduler.step()
 
-            val_loss, val_metrics, _ = self.run_epoch(self.val_data, is_train=False)
+            val_loss, val_metrics = self.run_epoch(is_train=False)
 
             self.logger.log(
                 f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
@@ -181,35 +175,30 @@ class MonaiTrainer:
                 - weight_decay: Weight decay factor
                 - scheduler: Optional scheduler configuration
             scheduler_factory (SchedulerFactory): Factory class for creating learning rate schedulers
-            model_registry (ModelRegistry): Registry containing available model architectures
+            model_registry (ModelRegistry, optional): Registry containing available model architectures. Defaults to ModelRegistry().
 
         Each architecture is trained independently with its own optimizer and scheduler.
         Training results and errors are logged using the trainer's logger.
         """
         for arch in network_architectures:
             # Load model, optim and scheduler
-            model = model_loader(
+            self.model = model_loader(
                 arch, 
                 self.device, 
                 model_registry=model_registry,
                 weights=arch.get('weights')
             )
-            torch.compile(model)
-            optimizer = torch.optim.AdamW(
-                model.parameters(), 
+            torch.compile(self.model)
+            self.optimizer = torch.optim.AdamW(
+                self.model.parameters(), 
                 lr=optimizer_params["learning_rate"], 
                 weight_decay=optimizer_params.get('weight_decay', 1e-5)
             )
-            scheduler = scheduler_factory.create_scheduler(
-                optimizer,
+            self.scheduler = scheduler_factory.create_scheduler(
+                self.optimizer,
                 optimizer_params.get("scheduler", {}),
                 num_epochs
             )
-            
-            # Pass to self
-            self.model = model
-            self.optimizer = optimizer 
-            self.scheduler = scheduler
             
             # Train
             try:
@@ -226,82 +215,45 @@ class MonaiTrainer:
                     f"Error training {arch['model_name']}: {str(e)}\n{traceback.format_exc()}", 
                     level="ERROR"
                 )
-
-
-    def run_epoch(
-        self, dataset: torch.utils.data.Dataset, 
-        is_train: bool = True,
-    ) -> Tuple[float, Dict[str, float], float]:
+    def run_epoch(self, is_train: bool = True) -> Dict[str, float]:
         """
         Run a single epoch of training or validation.
 
         Args:
-            dataset (torch.utils.data.Dataset): The dataset to use for the epoch.
             is_train (bool, optional): Whether it is a training epoch. Defaults to True.
 
         Returns:
-            Tuple[float, Dict[str, float], float]: A tuple containing the epoch loss, epoch metrics, and inference time.
+            Dict[str, float]: A dictionary containing the epoch metrics.
         """
-
-        epoch_loss = 0
+        phase = 'train' if is_train else 'val'
         epoch_metrics = {metric_name: 0 for metric_name in self.metrics.keys()}
-        inference_times = []
-        tic = time.time()
-        self.model.train() if is_train else self.model.eval()
+        epoch_loss = 0
+        num_batches = len(self.dataloaders[phase])
+        self.model.train() if phase == 'train' else self.model.eval()
 
-        if is_train:
-            self.optimizer.zero_grad()
-        for i, batch_data in enumerate(dataset):
-            inputs, labels = (
-                batch_data["image"].to(self.device),
-                batch_data["label"].to(self.device),
-            )
-
-            if self.debugging:
-                tensor_debugger(inputs, "inputs", self.logger)
-                tensor_debugger(labels, "labels", self.logger)
-
-            # For the EverFocus models, we train on the noise structure because that normalises the images
-            with torch.set_grad_enabled(is_train):
+        with torch.set_grad_enabled(phase == 'train'):
+            for batch_data in tqdm(self.dataloaders[phase], desc=f"{phase} epoch"):
+                inputs, labels = self._prepare_batch(batch_data)
                 outputs = self.model(inputs)
-                if self.sigmoid_transform:
-                   outputs = torch.sigmoid(outputs)
-                if self.debugging:
-                    tensor_debugger(outputs, "outputs", self.logger)
-
-                #cleaned = inputs - outputs 
                 loss = self.loss_function(outputs, labels)
-                
-            radom_int = np.random.randint(0, 10)
-            if not is_train and radom_int == 0 and self.debugging:
-                # Write masks and source to tiff to check prediction
-                import tifffile
-                tifffile.imwrite('./data/inspection_images/inputs.tiff', inputs.cpu().numpy()[:,0])
-                tifffile.imwrite('./data/inspection_images/mask.tiff', labels.cpu().numpy()[:,0])
-                tifffile.imwrite('./data/inspection_images/outputs.tiff', outputs.cpu().numpy()[:,0])
-                tifffile.imwrite('./data/inspection_images/loss.tiff', labels.cpu().numpy()[:,0] - outputs.cpu().numpy()[:,0])
-            if is_train:
-                loss = loss / self.accumulation_steps
-                loss.backward()
-                if (i + 1) % self.accumulation_steps == 0:
-                    self.optimizer.step()
+
+                if phase == 'train':
                     self.optimizer.zero_grad()
-                reported_loss = loss.item() * self.accumulation_steps  # Adjust back for reporting
-            else:
-                reported_loss = loss.item()
+                    loss.backward()
+                    self.optimizer.step()
 
-            epoch_loss += reported_loss
-            for metric_name, metric_fn in self.metrics.items():
-                epoch_metrics[metric_name] += metric_fn(outputs, labels) / len(dataset)
+                epoch_loss += loss.detach().item()
+                self._update_metrics(epoch_metrics, outputs, labels)
 
-            inference_times.append(time.time() - tic)
-            tic = time.time()
+        epoch_loss /= num_batches
+        epoch_metrics = {k: v / num_batches for k, v in epoch_metrics.items()}
 
-        epoch_loss /= len(dataset)
-        inference_time = np.mean(inference_times)
+        if self.debugging:
+            self._save_inspection_images(inputs, labels, outputs, phase)
+
+        del inputs, labels, outputs, loss
         empty_gpu_cache(self.device)
-
-        return epoch_loss, epoch_metrics, inference_time
+        return epoch_loss, epoch_metrics
 
     def early_stop(self, val_loss: float, best_val_loss: float) -> bool:
         """
@@ -324,6 +276,62 @@ class MonaiTrainer:
                 return True
 
         return False
+
+    def _prepare_batch(self, batch_data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Prepare a batch of data for input to the model.
+
+        Args:
+            batch_data (Dict[str, torch.Tensor]): A dictionary containing the batch data.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: A tuple containing the input data and labels.
+        """
+        inputs = batch_data['image'].to(self.device)
+        labels = batch_data['label'].to(self.device)
+
+        if self.debugging:
+            tensor_debugger(inputs, "inputs", self.logger)
+            tensor_debugger(labels, "labels", self.logger)
+
+        if self.sigmoid_transform:
+            inputs = torch.sigmoid(inputs)
+
+        return inputs, labels
+
+    def _update_metrics(self, epoch_metrics: Dict[str, float], outputs: torch.Tensor, labels: torch.Tensor) -> Dict[str, float]:
+        """
+        Update the epoch metrics with the current batch's metrics.
+
+        Args:
+            epoch_metrics (Dict[str, float]): A dictionary containing the epoch metrics.
+            outputs (torch.Tensor): The model outputs for the current batch.
+            labels (torch.Tensor): The labels for the current batch.
+        """
+        for metric_name, metric_fn in self.metrics.items():
+            metric_value = metric_fn(outputs, labels)
+            if isinstance(metric_value, torch.Tensor):
+                metric_value = metric_value.detach()
+            epoch_metrics[metric_name] += metric_value
+        
+        return epoch_metrics
+
+    def _save_inspection_images(self, inputs: torch.Tensor, labels: torch.Tensor, outputs: torch.Tensor, phase: str) -> None:
+        """
+        Save inspection images for debugging purposes.
+
+        Args:
+            inputs (torch.Tensor): The input data for the current batch.
+            labels (torch.Tensor): The labels for the current batch.
+            outputs (torch.Tensor): The model outputs for the current batch.
+            phase (str): The phase of the epoch, either 'train' or 'val'.
+        """
+        if phase == 'val' and np.random.randint(0, 10) == 0:
+            import tifffile
+            tifffile.imwrite('./data/inspection_images/inputs.tiff', inputs.cpu().numpy()[:,0])
+            tifffile.imwrite('./data/inspection_images/mask.tiff', labels.cpu().numpy()[:,0])
+            tifffile.imwrite('./data/inspection_images/outputs.tiff', outputs.cpu().numpy()[:,0])
+            tifffile.imwrite('./data/inspection_images/loss.tiff', labels.cpu().numpy()[:,0] - outputs.cpu().numpy()[:,0])
 
     def save_model(
         self,
