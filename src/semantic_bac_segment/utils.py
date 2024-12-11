@@ -3,7 +3,7 @@ from logging import Logger
 import tifffile
 import numpy as np
 import torch
-
+import gc
 
 def get_bit_depth(img: np.ndarray) -> int:
     """
@@ -96,7 +96,7 @@ def empty_gpu_cache(device: torch.device) -> None:
         torch.cuda.empty_cache()
     elif device.type == "mps":
         torch.mps.empty_cache()
-
+    gc.collect()
 
 def get_device() -> torch.device:
     """
