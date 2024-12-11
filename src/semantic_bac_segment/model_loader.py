@@ -104,3 +104,26 @@ def model_loader(
         model.load_state_dict(torch.load(weights, map_location=device))
 
     return model
+
+if __name__ == "__main__":
+    # 1. Define your custom model
+    class MyNewSegmentationModel(torch.nn.Module):
+        def __init__(self, in_channels, num_classes):
+            super().__init__()
+            self.conv = nn.Conv2d(in_channels, num_classes, 1)
+        
+        def forward(self, x):
+            return self.conv(x)
+
+    # 2. Register the model
+    model_registry = ModelRegistry()
+    model_registry.register("MyNewModel", MyNewSegmentationModel)
+
+    # 3. Use in training configuration
+    network_architecture = {
+        "model_name": "MyNewModel",
+        "model_args": {
+            "in_channels": 1,
+            "num_classes": 1
+        }
+    }
