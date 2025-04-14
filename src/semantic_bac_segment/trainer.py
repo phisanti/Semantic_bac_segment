@@ -4,7 +4,7 @@ import time
 import json
 import traceback
 import numpy as np
-from typing import Dict, List, Tuple, Any, Callable, TypeVar
+from typing import Dict, List, Tuple, Any, Callable, TypeVar, Optional, Union
 from torch.utils.tensorboard import SummaryWriter
 from semantic_bac_segment.utils import tensor_debugger, empty_gpu_cache
 from semantic_bac_segment.trainlogger import TrainLogger
@@ -28,9 +28,11 @@ class MonaiTrainer:
         optimizer (torch.optim.Optimizer): The optimizer for training.
         scheduler (torch.optim.lr_scheduler._LRScheduler): The learning rate scheduler.
         device (torch.device): The device to run the training on.
-        sigmoid_transform (bool): Whether to apply sigmoid transformation to the model outputs.
+        output_transform (Optional[Callable]): Optional transform to apply to model outputs before loss calculation.
+            If None, no transformation is applied. Defaults to None.
         logger (TrainLogger, optional): The logger for logging training progress. Defaults to TrainLogger('MonaiTrainer', level='INFO').
         debugging (bool, optional): Whether to enable debugging mode. Defaults to False.
+        accumulation_steps (int, optional): Number of gradient accumulation steps. Defaults to 1.
     """
 
     def __init__(
@@ -41,7 +43,7 @@ class MonaiTrainer:
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler._LRScheduler,
         device: torch.device,
-        sigmoid_transform: bool,
+        output_transform: Optional[Callable] = None,
         logger: TrainLogger = TrainLogger("MonaiTrainer", level="INFO"),
         debugging: bool = False,
         accumulation_steps: int = 1
@@ -56,8 +58,8 @@ class MonaiTrainer:
         self.metrics = {}
         self.check_early_stop = False
         self.stop_training = False
-        self.sigmoid_transform = sigmoid_transform
-        self.accumulation_steps = accumulation_steps# For the moment, I will deprecate this parameter as it is not required for most trainings and just slows down the training process
+        self.output_transform = output_transform
+        self.accumulation_steps = accumulation_steps
 
     def set_early_stop(self, patience=5):
         """
@@ -235,6 +237,10 @@ class MonaiTrainer:
             for batch_data in tqdm(self.dataloaders[phase], desc=f"{phase} epoch"):
                 inputs, labels = self._prepare_batch(batch_data)
                 outputs = self.model(inputs)
+                
+                if self.output_transform is not None:
+                    outputs = self.output_transform(outputs)
+                
                 loss = self.loss_function(outputs, labels)
 
                 if phase == 'train':
@@ -293,9 +299,6 @@ class MonaiTrainer:
         if self.debugging:
             tensor_debugger(inputs, "inputs", self.logger)
             tensor_debugger(labels, "labels", self.logger)
-
-        if self.sigmoid_transform:
-            inputs = torch.sigmoid(inputs)
 
         return inputs, labels
 
