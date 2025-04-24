@@ -11,6 +11,7 @@ from semantic_bac_segment.trainlogger import TrainLogger
 from semantic_bac_segment.schedulerfactory import SchedulerFactory
 from semantic_bac_segment.model_loader import model_loader, ModelRegistry
 from torch.utils.data import Subset
+from torchinfo import summary
 from tqdm import tqdm
 
 DataContainer = TypeVar('DataContainer', torch.utils.data.Dataset, torch.utils.data.DataLoader)
@@ -79,8 +80,7 @@ class MonaiTrainer:
         metrics: Dict[str, Callable],
         num_epochs: int,
         saving_folder: str,
-        model_name: str,
-        model_args: Dict[str, Any],
+        arch: Dict[str, Any],
     ) -> None:
         """
         Train the model.
@@ -90,13 +90,13 @@ class MonaiTrainer:
             metrics (Dict[str, Callable]): A dictionary of metric functions.
             num_epochs (int): The number of epochs to train for.
             saving_folder (str): The folder to save the trained models and configurations.
-            model_name (str): The name of the model.
-            model_args (Dict[str, Any]): The arguments used to initialize the model.
+            arch (Dict[str, Any]): The full architecture dictionary containing model configuration and metadata.
         """
         self.saving_folder = saving_folder
         self.metrics = metrics if metrics else []
         self.loss_function = criterion
         best_val_loss = 10000
+        model_name = arch.get("model_name", "unnamed_model")
         self.logger.log(f"Training model: {model_name}")
         self.writer = SummaryWriter(comment=f"-{model_name}")
 
@@ -137,7 +137,7 @@ class MonaiTrainer:
                     metric_name: metric_value.item()
                     for metric_name, metric_value in val_metrics.items()
                 }
-                self.save_model(model_name, model_args, metrics_output, best=True)
+                self.save_model(arch, metrics_output, best=True)
                 self.logger.log(
                     f"Saved best model with validation loss: {best_val_loss:.4f}"
                 )
@@ -146,41 +146,32 @@ class MonaiTrainer:
             metric_name: metric_value.item()
             for metric_name, metric_value in val_metrics.items()
         }
-        self.save_model(model_name, model_args, metrics_output, best=False)
+        self.save_model(arch, metrics_output, best=False)
         self.writer.close()
 
     def multi_train(
         self,
-        network_architectures: List[Dict],
+        network_architectures: List[Dict[str, Any]],
         criterion: torch.nn.Module,
         metrics: Dict[str, Callable],
         num_epochs: int,
         saving_folder: str,
-        optimizer_params: Dict,
+        optimizer_params: Dict[str, Any],
         scheduler_factory: SchedulerFactory,
         model_registry: ModelRegistry = ModelRegistry()
-        ) -> None:
+    ) -> None:
         """
         Train multiple model architectures sequentially.
 
         Args:
-            network_architectures (List[Dict]): List of architecture configurations that will be passed to the ModelRegistry to build the model, each containing:
-                - model_name: Name of the model
-                - model_args: Model initialization parameters
-                - weights: Optional path to pretrained weights
-            criterion (torch.nn.Module): Loss function for training
-            metrics (Dict[str, Callable]): Dictionary of metric functions for evaluation
-            num_epochs (int): Number of epochs to train each architecture
-            saving_folder (str): Directory to save model checkpoints and configurations
-            optimizer_params (Dict): Parameters for the AdamW optimizer including:
-                - learning_rate: Initial learning rate
-                - weight_decay: Weight decay factor
-                - scheduler: Optional scheduler configuration
-            scheduler_factory (SchedulerFactory): Factory class for creating learning rate schedulers
-            model_registry (ModelRegistry, optional): Registry containing available model architectures. Defaults to ModelRegistry().
-
-        Each architecture is trained independently with its own optimizer and scheduler.
-        Training results and errors are logged using the trainer's logger.
+            network_architectures (List[Dict[str, Any]]): List of architecture dictionaries.
+            criterion (torch.nn.Module): Loss function for training.
+            metrics (Dict[str, Callable]): Dictionary of metric functions for evaluation.
+            num_epochs (int): Number of epochs to train each architecture.
+            saving_folder (str): Directory to save model checkpoints and configurations.
+            optimizer_params (Dict[str, Any]): Parameters for the AdamW optimizer.
+            scheduler_factory (SchedulerFactory): Factory class for creating learning rate schedulers.
+            model_registry (ModelRegistry, optional): Registry containing available model architectures.
         """
         for arch in network_architectures:
             # Load model, optim and scheduler
@@ -204,19 +195,23 @@ class MonaiTrainer:
             
             # Train
             try:
+                sample_batch = next(iter(self.dataloaders['train']))
+                input_size = sample_batch['image'].shape
+                model_info = str(summary(self.model, input_size=input_size, device=str(self.device), verbose=0))
+                self.logger.log(f"Model info:\n{model_info}")
                 self.train(
                     criterion,
                     metrics, 
                     num_epochs,
                     saving_folder,
-                    arch["model_name"],
-                    arch["model_args"]
+                    arch
                 )
             except Exception as e:
                 self.logger.log(
-                    f"Error training {arch['model_name']}: {str(e)}\n{traceback.format_exc()}", 
+                    f"Error training {arch.get('model_name', 'unnamed_model')}: {str(e)}\n{traceback.format_exc()}", 
                     level="ERROR"
                 )
+
     def run_epoch(self, is_train: bool = True) -> Dict[str, float]:
         """
         Run a single epoch of training or validation.
@@ -338,8 +333,7 @@ class MonaiTrainer:
 
     def save_model(
         self,
-        model_name: str,
-        model_args: Dict[str, Any],
+        arch: Dict[str, Any],
         metrics_output: Dict[str, float],
         best: bool = False,
     ) -> None:
@@ -347,23 +341,22 @@ class MonaiTrainer:
         Save the trained model and its configuration.
 
         Args:
-            model_name (str): The name of the model.
-            model_args (Dict[str, Any]): The arguments used to initialize the model.
+            arch (Dict[str, Any]): The full architecture dictionary.
             metrics_output (Dict[str, float]): The output metrics of the model.
             best (bool, optional): Whether it is the best model so far. Defaults to False.
         """
+        model_name = arch.get("model_name", "unnamed_model")
 
         # Save the model weights
         model_filename = f"{model_name}_{'best' if best else 'final'}_model.pth"
         model_path = os.path.join(self.saving_folder, model_filename)
         torch.save(self.model.state_dict(), model_path)
 
-        # Save the model configuration and metrics output as JSON
+        # Save the full architecture dictionary and metrics output as JSON
         json_filename = f"{model_name}_{'best' if best else 'final'}_config.json"
         json_path = os.path.join(self.saving_folder, json_filename)
         config_data = {
-            "model_name": model_name,
-            "model_args": model_args,
+            "arch": arch,
             "metrics_output": metrics_output,
         }
         with open(json_path, "w") as json_file:
