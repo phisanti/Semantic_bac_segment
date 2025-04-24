@@ -1,7 +1,11 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from semantic_bac_segment.utils import tensor_debugger
-
+from monai.transforms import DistanceTransformEDT as monai_distance_transform_edt
+from monai.losses import DiceFocalLoss
+from monai.utils import LossReduction
+from typing import Literal
 
 class DiceLoss(nn.Module):
     """
@@ -409,3 +413,105 @@ class MultiClassWeightedBinaryCrossEntropy(nn.Module):
         multi_channel_bce_loss = sum(bce_losses) / num_channels
 
         return multi_channel_bce_loss
+
+
+class AdjustedDiceFocalLoss(nn.Module):
+    """
+    Extension of MONAI's DiceFocalLoss that adds an extra penalty for false positives
+    in all-background images (where ground truth contains no positive pixels).
+    Assumes input tensor contains raw logits.
+
+    Args:
+        fp_penalty_weight (float): Weight factor for the false positive penalty term.
+            Higher values enforce stronger penalties for predicting objects
+            when none exist. Default: 10.0.
+        reduction (str): Specifies the reduction to apply to the output:
+            ``'none'`` | ``'mean'`` | ``'sum'``. Default: ``'mean'``.
+        empty_mask_threshold (float): Threshold below which the target sum is considered empty.
+            Default: 1e-6.
+        **kwargs: Arguments to pass to MONAI's DiceFocalLoss constructor (e.g., sigmoid,
+                  softmax, include_background, gamma, lambda_dice, lambda_focal).
+                  Ensure these are set consistent with expecting logits as input.
+    """
+    def __init__(self,
+                fp_penalty_weight: float = 10.0,
+                reduction: Literal['none', 'mean', 'sum'] = 'mean',
+                empty_mask_threshold: float = 1e-6,
+                is_sigmoid: bool = False,
+                **kwargs) -> None:
+        super().__init__()
+        # Store these values for later use
+        self.include_background = kwargs.pop('include_background', False)
+        self.is_softmax = kwargs.pop('softmax', False)
+        self.is_sigmoid = is_sigmoid
+        self.fp_penalty_weight = fp_penalty_weight
+        self.reduction_mode = LossReduction(reduction)
+        self.empty_mask_threshold = empty_mask_threshold
+        
+        # Force per-item losses from base DiceFocalLoss
+        kwargs_copy = dict(kwargs)
+        kwargs_copy['reduction'] = 'none'
+        kwargs_copy['include_background'] = self.include_background
+        kwargs_copy['softmax'] = self.is_softmax
+        kwargs_copy['sigmoid'] = not self.is_sigmoid 
+        
+        # Initialize dice_focal with our parameters
+        self.dice_focal = DiceFocalLoss(**kwargs_copy)
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """Args:
+        input: Model predictions (raw logits or sigmoid-activated). Shape (B, C, H, W, [D]).
+        target: Ground truth masks. Shape (B, C, H, W, [D]).
+        Returns:
+        Combined loss value."""
+        
+        # Calculate base loss per item
+        per_item_loss = self.dice_focal(input, target)
+
+        # Identify empty masks (all background)
+        spatial_dims = tuple(range(2, target.dim())) # H, W, [D]
+        target_sum_per_channel = target.sum(dim=spatial_dims) # Shape: (B, C)
+        is_empty = (target_sum_per_channel.sum(dim=1) <= self.empty_mask_threshold) # Shape: (B,)
+
+        if not torch.any(is_empty):
+            if self.reduction_mode == LossReduction.MEAN:
+                return per_item_loss.mean()
+            elif self.reduction_mode == LossReduction.SUM:
+                return per_item_loss.sum()
+            else: # LossReduction.NONE
+                return per_item_loss
+        
+        # Calc. penalty for each empty mask
+        penalties = torch.zeros_like(per_item_loss)
+        empty_indices = torch.where(is_empty)[0]
+       
+        if len(empty_indices) > 0:
+            empty_predictions = input[empty_indices]
+            if self.is_softmax and not self.include_background:
+                fg_predictions = empty_predictions[:, 1:]
+            else:
+                fg_predictions = empty_predictions
+                
+            if fg_predictions.shape[1] > 0:
+                zero_target = torch.zeros_like(fg_predictions)
+                
+                # Apply BCE with logits or regular BCE depending on input type
+                if self.is_sigmoid:
+                    # If input is already sigmoid-activated, use regular BCE
+                    bce_penalty_per_element = F.binary_cross_entropy(
+                        fg_predictions, zero_target, reduction='none')
+                else:
+                    # If input is raw logits, use BCE with logits
+                    bce_penalty_per_element = F.binary_cross_entropy_with_logits(
+                        fg_predictions, zero_target, reduction='none')
+                penalties[empty_indices] = bce_penalty_per_element * self.fp_penalty_weight
+        
+        # Combine and reduce        
+        combined_loss_per_item = per_item_loss + penalties
+        
+        if self.reduction_mode == LossReduction.MEAN:
+            return combined_loss_per_item.mean()
+        elif self.reduction_mode == LossReduction.SUM:
+            return combined_loss_per_item.sum()
+        else: # LossReduction.NONE
+            return combined_loss_per_item
